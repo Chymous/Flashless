@@ -1,0 +1,4 @@
+# build output
+target/
+# release files (exes and zips) - published separately, not versioned
+dist/
