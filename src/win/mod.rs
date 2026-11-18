@@ -1,6 +1,8 @@
-﻿//! Windows integration. Everything here is read-only towards the game except `typing`, which sends
+//! Windows integration. Everything here is read-only towards the game except `typing`, which sends
 //! ordinary keyboard input only when the user presses the Type In Chat hotkey.
 
+#[cfg(feature = "personal")]
+pub mod dpapi;
 pub mod capture;
 pub mod clipboard;
 pub mod hotkeys;

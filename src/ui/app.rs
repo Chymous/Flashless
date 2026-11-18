@@ -66,6 +66,18 @@ pub struct App {
     update_rx: Receiver<crate::update::Release>,
     /// In-app update in progress: the downloaded setup (or why it failed) arrives here.
     updating: Option<Receiver<Result<std::path::PathBuf, String>>>,
+    /// Your Riot ID from the live game.
+    me: String,
+    #[cfg(feature = "personal")]
+    riot: Option<Receiver<Result<Vec<crate::riot::RunePage>, String>>>,
+    /// Next rune lookup attempt for this game (personal builds), and attempts so far.
+    #[cfg(feature = "personal")]
+    riot_retry: Option<(Instant, u32)>,
+    #[cfg(feature = "personal")]
+    riot_retry_count: u32,
+    /// Asked for from Settings.
+    #[cfg(feature = "personal")]
+    pub riot_lookup_now: bool,
 }
 
 /// A chat detection whose time could not be read yet.
@@ -120,7 +132,11 @@ impl App {
             flash: None, copy_due: None, seen_revision: 0, expanded: None, setup: None, hidden: false, hwnd_done: false,
             last_lines: HashSet::new(), last_detections: HashMap::new(), last_size: Vec2::ZERO, last_pos: None, next_theme_check: Instant::now(),
             demo, sightings: HashMap::new(), last_scan: None, alerts: HashMap::new(), passthrough: false, was_live: false,
-            force_show: false, update: None, update_rx, updating: None,
+            force_show: false, update: None, update_rx, updating: None, me: String::new(),
+            #[cfg(feature = "personal")] riot_lookup_now: false,
+            #[cfg(feature = "personal")] riot: None,
+            #[cfg(feature = "personal")] riot_retry: None,
+            #[cfg(feature = "personal")] riot_retry_count: 0,
         };
         let failed = hotkeys::set_bindings(&app.settings.hotkeys);
         if !failed.is_empty() { app.flash(format!("bad or duplicate hotkey: {}", failed.join(", "))); }
@@ -130,6 +146,57 @@ impl App {
     }
 
     fn rules(&self) -> &CooldownRules { &self.settings.rules }
+
+    /// Personal builds: looks up the enemies' rune pages once per game, retrying while the game is not listed yet.
+    #[cfg(feature = "personal")]
+    fn pump_riot(&mut self, ctx: &egui::Context) {
+        if std::mem::take(&mut self.riot_lookup_now) { self.riot_retry = Some((Instant::now(), 0)); }
+        if self.riot.is_none() && crate::riot::has_key() && self.clock.is_live && !self.me.is_empty() {
+            if let Some((at, n)) = self.riot_retry {
+                if Instant::now() >= at {
+                    self.riot_retry = None;
+                    let (tx, rx) = channel();
+                    let (region, me, c) = (self.settings.riot_region.clone(), self.me.clone(), ctx.clone());
+                    std::thread::spawn(move || { let _ = tx.send(crate::riot::enemy_runes(&region, &me)); c.request_repaint(); });
+                    self.riot = Some(rx);
+                    self.riot_retry_count = n;
+                }
+            }
+        }
+        let Some(rx) = &self.riot else { return };
+        let Ok(res) = rx.try_recv() else { return };
+        self.riot = None;
+        match res {
+            Ok(pages) => {
+                let now = self.clock.now();
+                let (data, rules) = (self.data.clone(), self.rules().clone());
+                let mut with_ci = Vec::new();
+                let mut matched = 0;
+                for i in 0..self.tracker.enemies.len() {
+                    let id = self.tracker.enemies[i].riot_id.to_lowercase();
+                    let Some(page) = pages.iter().find(|p| !id.is_empty() && p.riot_id.to_lowercase() == id) else { continue };
+                    matched += 1;
+                    let e = &mut self.tracker.enemies[i];
+                    e.runes_known = true;
+                    e.has_inspiration = page.inspiration;
+                    let changed = e.cosmic_insight != page.cosmic_insight;
+                    e.cosmic_insight = page.cosmic_insight;
+                    if page.cosmic_insight { with_ci.push(e.name.clone()); }
+                    if changed { self.tracker.recalculate(i, now, true, &data, &rules); }
+                }
+                let msg = if with_ci.is_empty() { format!("runes read for {matched} enemies: no Cosmic Insight") } else { format!("Cosmic Insight: {}", with_ci.join(", ")) };
+                self.chat_log(&format!("RIOT API {msg}"));
+                self.flash(msg);
+            }
+            Err(e) => {
+                self.chat_log(&format!("RIOT API {e}"));
+                // the game can take a minute to be listed; retry a few times, then give up for this game
+                let n = self.riot_retry_count + 1;
+                if e.starts_with("no live game") && n < 4 { self.riot_retry = Some((Instant::now() + Duration::from_secs(45), n)); }
+                else { self.flash(format!("Riot API: {e}")); }
+            }
+        }
+    }
 
     /// Shows (and logs) what the tracker worked out by itself, such as a detected Cosmic Insight.
     fn show_tracker_note(&mut self) {
@@ -375,10 +442,15 @@ impl App {
             match snap {
                 Some(s) => {
                     self.clock.sync_live(s.game_time);
+                    if !s.me.is_empty() { self.me = s.me.clone(); }
                     let before: Vec<String> = self.tracker.enemies.iter().map(|e| e.champion_id.clone()).collect();
                     if self.tracker.apply_live(&s, &self.data, &self.settings.rules) {
                         self.filter.reset();
-                        if !self.tracker.enemies.iter().any(|e| before.contains(&e.champion_id)) { self.rotate_chat_log(); }
+                        if !self.tracker.enemies.iter().any(|e| before.contains(&e.champion_id)) {
+                            self.rotate_chat_log();
+                            #[cfg(feature = "personal")]
+                            { self.riot_retry = Some((Instant::now(), 0)); }
+                        }
                         let names: Vec<&str> = self.tracker.enemies.iter().map(|e| e.champion_id.as_str()).collect();
                         self.chat_log(&format!("ROSTER {}", names.join(", ")));
                     }
@@ -399,6 +471,8 @@ impl App {
         if let Ok(d) = self.data_rx.try_recv() { self.flash(format!("data updated to {}", d.version)); self.data = d; }
         if let Ok(s) = self.status_rx.try_recv() { self.flash(s); }
 
+        #[cfg(feature = "personal")]
+        self.pump_riot(ctx);
         if let Ok(r) = self.update_rx.try_recv() { self.flash(format!("Flashless {} is available", r.version)); self.update = Some(r); }
         if let Some(rx) = &self.updating {
             if let Ok(res) = rx.try_recv() {
@@ -542,7 +616,7 @@ impl App {
         let cy = rect.center().y;
         theme::brand(&painter, egui::pos2(rect.left() + 22.0, cy), 9.0, &p);
         let name = painter.text(egui::pos2(rect.left() + 38.0, cy), Align2::LEFT_CENTER, "Flashless", theme::semi(13.5), p.text);
-        let title = painter.text(egui::pos2(name.right() + 5.0, cy + 1.0), Align2::LEFT_CENTER, concat!("v", env!("CARGO_PKG_VERSION")), theme::regular(10.0), p.muted);
+        let title = painter.text(egui::pos2(name.right() + 5.0, cy + 1.0), Align2::LEFT_CENTER, if cfg!(feature = "personal") { concat!("v", env!("CARGO_PKG_VERSION"), "-p") } else { concat!("v", env!("CARGO_PKG_VERSION")) }, theme::regular(10.0), p.muted);
         // status pill
         let status = self.status_text();
         let galley = painter.layout_no_wrap(status, theme::regular(10.5), p.muted);
@@ -594,7 +668,7 @@ impl App {
             if let Some(role) = &e.role {
                 x = painter.text(egui::pos2(x, lv.center().y), Align2::LEFT_CENTER, format!("  ·  {role}"), theme::semi(10.0), p.accent_deep).right();
             }
-            if e.has_inspiration && !e.cosmic_insight {
+            if e.has_inspiration && !e.cosmic_insight && !e.runes_known {
                 painter.text(egui::pos2(x, lv.center().y), Align2::LEFT_CENTER, "  CI?", theme::semi(10.0), p.cooling);
             }
             for (k, slot) in self.display_slots(i).iter().enumerate() {

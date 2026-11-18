@@ -39,6 +39,10 @@ pub struct Enemy {
     /// Runs the Inspiration tree, so Cosmic Insight is possible (the API never shows minor runes).
     pub has_inspiration: bool,
     pub cosmic_insight: bool,
+    /// Rune page read from the Riot API (personal builds): Cosmic Insight is known, not guessed.
+    pub runes_known: bool,
+    /// "Name#TAG", to match Riot API data.
+    pub riot_id: String,
     pub extra_summoner_haste: i32,
     pub cooldowns: HashMap<Slot, ActiveCooldown>,
 }
@@ -135,7 +139,7 @@ impl Tracker {
     pub fn cosmic_insight_explains(&self, i: usize, slot: Slot, new_start: f64, rules: &CooldownRules) -> bool {
         let Some(e) = self.enemies.get(i) else { return false };
         let Some(prev) = e.cooldowns.get(&slot) else { return false };
-        if e.cosmic_insight || !e.has_inspiration || prev.ready_at - new_start <= 3.0 { return false; }
+        if e.cosmic_insight || e.runes_known || !e.has_inspiration || prev.ready_at - new_start <= 3.0 { return false; }
         let ci = rules.cosmic_insight_summoner_haste as f64;
         let ready_with_ci = prev.started_at + prev.duration() * (100.0 + prev.haste) / (100.0 + prev.haste + ci);
         new_start >= ready_with_ci - 5.0
@@ -241,6 +245,7 @@ impl Tracker {
                     if let Some(old) = self.enemies.iter().find(|o| o.champion_id == e.champion_id) {
                         e.cooldowns = old.cooldowns.clone();
                         e.cosmic_insight = old.cosmic_insight;
+                        e.runes_known = old.runes_known;
                         e.extra_summoner_haste = old.extra_summoner_haste;
                     }
                 }
@@ -258,7 +263,8 @@ impl Tracker {
                 cur.item_ids = fresh.item_ids;
                 cur.spell1_id = fresh.spell1_id;
                 cur.spell2_id = fresh.spell2_id;
-                cur.has_inspiration = fresh.has_inspiration;
+                if !cur.runes_known { cur.has_inspiration = fresh.has_inspiration; }
+                cur.riot_id = fresh.riot_id;
                 cur.role = fresh.role;
             }
         }
@@ -376,8 +382,8 @@ mod tests {
         let r = CooldownRules::default();
         let p = |c: &str, team: &str| live::LivePlayer { champion_raw: format!("game_character_displayname_{c}"), champion_name: c.into(), team: team.into(),
             position: String::new(), level: 6, item_ids: vec![], spell1_raw: String::new(), spell1_name: "Flash".into(), spell2_raw: String::new(),
-            spell2_name: "Heal".into(), has_inspiration: false };
-        let snap = |enemies: Vec<live::LivePlayer>, t: f64| LiveSnapshot { game_time: t, game_mode: "CLASSIC".into(), map_number: 11, enemies };
+            spell2_name: "Heal".into(), has_inspiration: false, riot_id: String::new() };
+        let snap = |enemies: Vec<live::LivePlayer>, t: f64| LiveSnapshot { game_time: t, game_mode: "CLASSIC".into(), map_number: 11, enemies, me: String::new() };
         let mut t = Tracker::default();
         t.apply_live_default(&snap(vec![p("Diana", "CHAOS"), p("Vayne", "CHAOS")], 1000.0), &d);
         assert!(t.register(0, Slot::Spell1, 0.0, 1000.0, true, &d, &r));
@@ -452,8 +458,8 @@ mod tests {
         let r = CooldownRules::default();
         let p = |items: Vec<i64>| live::LivePlayer { champion_raw: "game_character_displayname_Diana".into(), champion_name: "Diana".into(), team: "CHAOS".into(),
             position: String::new(), level: 9, item_ids: items, spell1_raw: String::new(), spell1_name: "Flash".into(), spell2_raw: String::new(),
-            spell2_name: "Ignite".into(), has_inspiration: false };
-        let snap = |items: Vec<i64>, t: f64| LiveSnapshot { game_time: t, game_mode: "CLASSIC".into(), map_number: 11, enemies: vec![p(items)] };
+            spell2_name: "Ignite".into(), has_inspiration: false, riot_id: String::new() };
+        let snap = |items: Vec<i64>, t: f64| LiveSnapshot { game_time: t, game_mode: "CLASSIC".into(), map_number: 11, enemies: vec![p(items)], me: String::new() };
         let mut t = Tracker::default();
         t.apply_live(&snap(vec![], 100.0), &d, &r);
         t.register(0, Slot::Spell1, 0.0, 100.0, true, &d, &r); // 300 s, ready at 400

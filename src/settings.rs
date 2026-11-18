@@ -50,6 +50,8 @@ pub struct Settings {
     pub flash_alert_sound: bool,
     /// Ask GitHub for a newer release on start.
     pub check_updates: bool,
+    /// Riot API region for the rune lookup (personal builds).
+    pub riot_region: String,
     /// Which summoner spell sits in the left tile.
     pub spell_order: SpellOrder,
     pub left: Option<f32>,
@@ -102,6 +104,7 @@ impl Default for Settings {
             flash_alert: true,
             flash_alert_sound: false,
             check_updates: true,
+            riot_region: "NA".into(),
             spell_order: SpellOrder::FlashLeft,
             left: None,
             top: None,

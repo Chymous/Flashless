@@ -37,6 +37,11 @@ pub struct SetupState {
     countdown: Option<Instant>,
     picker: Option<Picker>,
     chrome_for: Option<bool>,
+    /// Key being typed; cleared once saved. Never shown again after saving.
+    #[cfg(feature = "personal")]
+    key_input: String,
+    #[cfg(feature = "personal")]
+    key_note: String,
 }
 
 impl SetupState {
@@ -68,6 +73,8 @@ impl SetupState {
             countdown: None,
             picker: None,
             chrome_for: None,
+            #[cfg(feature = "personal")] key_input: String::new(),
+            #[cfg(feature = "personal")] key_note: String::new(),
         }
     }
 }
@@ -141,6 +148,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 clipboard_card(ui, &mut st, &p);
                 chat_card(ui, ctx, &mut st, &p);
                 appearance_card(ui, ctx, app, &mut st);
+                #[cfg(feature = "personal")]
+                riot_card(ui, app, &mut st, &p);
                 hotkeys_card(ui, ctx, &mut st, &p);
             });
         });
@@ -322,6 +331,39 @@ fn appearance_card(ui: &mut egui::Ui, ctx: &egui::Context, app: &mut App, st: &m
             ui.radio_value(&mut st.draft.spell_order, SpellOrder::FlashRight, "Flash on the right");
             ui.radio_value(&mut st.draft.spell_order, SpellOrder::Game, "As the enemy has them (D / F)");
         });
+    });
+}
+
+/// Personal builds: your Riot API key (stored encrypted) and region, for reading enemy rune pages.
+#[cfg(feature = "personal")]
+fn riot_card(ui: &mut egui::Ui, app: &mut App, st: &mut SetupState, p: &Pal) {
+    card(ui, p, "RIOT API (PERSONAL BUILD)", |ui| {
+        hint(ui, p, "Reads each enemy's full rune page at the start of a game, so Cosmic Insight is known instead of guessed. Uses your own key; it is stored encrypted for your Windows account only and never shown again.");
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label("Region");
+            egui::ComboBox::from_id_salt("riot-region").selected_text(st.draft.riot_region.clone()).show_ui(ui, |ui| {
+                for (code, _, _) in crate::riot::REGIONS { ui.selectable_value(&mut st.draft.riot_region, code.to_string(), *code); }
+            });
+        });
+        ui.add_space(4.0);
+        if crate::riot::has_key() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("API key saved (encrypted)").color(p.ready));
+                if ui.button("Remove key").clicked() { crate::riot::remove_key(); st.key_note = "Key removed.".into(); }
+                if ui.button("Look up runes now").on_hover_text("Needs a live game (not bot or practice games)").clicked() { app.riot_lookup_now = true; st.key_note = "Looking up... see the overlay.".into(); }
+            });
+        } else {
+            ui.horizontal(|ui| {
+                ui.label("API key");
+                ui.add(egui::TextEdit::singleline(&mut st.key_input).password(true).hint_text("RGAPI-...").desired_width(260.0));
+                if ui.button("Save key").clicked() {
+                    st.key_note = match crate::riot::save_key(&st.key_input) { Ok(()) => "Key saved.".into(), Err(e) => format!("Could not save: {e}") };
+                    st.key_input.clear();
+                }
+            });
+        }
+        if !st.key_note.is_empty() { hint(ui, p, &st.key_note); }
     });
 }
 

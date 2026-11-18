@@ -17,6 +17,8 @@ pub struct LivePlayer {
     pub champion_raw: String,
     pub champion_name: String,
     pub team: String,
+    /// "Name#TAG"
+    pub riot_id: String,
     pub position: String,
     pub level: i32,
     pub item_ids: Vec<i64>,
@@ -33,6 +35,8 @@ pub struct LiveSnapshot {
     pub game_mode: String,
     pub map_number: i32,
     pub enemies: Vec<LivePlayer>,
+    /// Your own "Name#TAG".
+    pub me: String,
 }
 
 fn s(v: &Value, k: &str) -> String { v[k].as_str().unwrap_or_default().to_string() }
@@ -61,6 +65,7 @@ pub fn parse(json: &str) -> Option<LiveSnapshot> {
             champion_raw: s(p, "rawChampionName"),
             champion_name: s(p, "championName"),
             team,
+            riot_id: s(p, "riotId"),
             position: s(p, "position"),
             level: p["level"].as_i64().unwrap_or(1) as i32,
             item_ids: p["items"].as_array().map(|a| a.iter().filter_map(|i| i["itemID"].as_i64()).collect()).unwrap_or_default(),
@@ -73,6 +78,7 @@ pub fn parse(json: &str) -> Option<LiveSnapshot> {
         game_mode: s(game, "gameMode"),
         map_number: game["mapNumber"].as_i64().unwrap_or(11) as i32,
         enemies,
+        me: my_riot,
     })
 }
 
@@ -112,6 +118,7 @@ pub fn to_enemy(p: &LivePlayer, data: &GameData, mode: &str) -> Enemy {
     Enemy {
         champion_id: champ.map(|c| c.id.clone()).unwrap_or_else(|| if raw_id.is_empty() { p.champion_name.clone() } else { raw_id.clone() }),
         name: champ.map(|c| c.name.clone()).unwrap_or_else(|| p.champion_name.clone()),
+        riot_id: p.riot_id.clone(),
         role: role_from_position(&p.position),
         level: p.level,
         item_ids: p.item_ids.clone(),
