@@ -428,6 +428,25 @@ mod tests {
     }
 
     #[test]
+    fn a_repeat_ping_mid_cooldown_is_not_cosmic_insight() {
+        // Flash pinged at the start of a fight, pinged again ~2 minutes later (after a death, before a respawn):
+        // far too soon for any haste, so no Cosmic Insight, and the chat filter keeps the first timer
+        let d = GameData::embedded();
+        let r = CooldownRules::default();
+        let mut t = Tracker::default();
+        let mut e = test_enemy("Diana", 9, &[]);
+        e.has_inspiration = true;
+        t.set_roster(vec![e]);
+        t.register(0, Slot::Spell1, 7.0, 600.0, true, &d, &r); // ready at 893
+        for later in [60.0, 120.0, 150.0, 200.0, 240.0] {
+            assert!(!t.cosmic_insight_explains(0, Slot::Spell1, 600.0 + later, &r), "{later}");
+            assert!(t.remaining(0, Slot::Spell1, 600.0 + later) > 15.0, "{later}"); // so chat rejects it
+        }
+        // only a use that Cosmic Insight's 254 s cooldown allows counts as one
+        assert!(t.cosmic_insight_explains(0, Slot::Spell1, 593.0 + 254.0, &r));
+        assert!(!t.enemies[0].cosmic_insight);
+    }
+    #[test]
     fn boots_bought_mid_cooldown_shorten_it() {
         let d = GameData::embedded();
         let r = CooldownRules::default();
