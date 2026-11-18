@@ -76,7 +76,7 @@ unsafe fn add_icon(hwnd: HWND) {
     nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     nid.uCallbackMessage = WM_TRAY;
     nid.hIcon = icon;
-    for (i, c) in "Flashless".encode_utf16().enumerate() { nid.szTip[i] = c; }
+    for (i, c) in concat!("Flashless v", env!("CARGO_PKG_VERSION")).encode_utf16().enumerate() { nid.szTip[i] = c; }
     if !Shell_NotifyIconW(NIM_ADD, &nid).as_bool() {
         let _ = std::fs::write(crate::settings::data_dir().join("tray.log"), format!("Shell_NotifyIconW failed, icon null: {}", icon.is_invalid()));
     }

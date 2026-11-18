@@ -438,7 +438,7 @@ impl App {
     fn status_text(&self) -> String {
         if let Some((t, until)) = &self.flash { if Instant::now() < *until { return t.clone(); } }
         let t = self.clock.now() as i64;
-        if self.clock.is_live { format!("live {}:{:02}", t / 60, t % 60) } else { "no game detected".into() }
+        if self.clock.is_live { format!("live {}:{:02}", t / 60, t % 60) } else { "no game".into() }
     }
 }
 
@@ -529,7 +529,8 @@ impl App {
         let painter = ui.painter_at(rect);
         let cy = rect.center().y;
         theme::brand(&painter, egui::pos2(rect.left() + 22.0, cy), 9.0, &p);
-        let title = painter.text(egui::pos2(rect.left() + 38.0, cy), Align2::LEFT_CENTER, "Flashless", theme::semi(13.5), p.text);
+        let name = painter.text(egui::pos2(rect.left() + 38.0, cy), Align2::LEFT_CENTER, "Flashless", theme::semi(13.5), p.text);
+        let title = painter.text(egui::pos2(name.right() + 5.0, cy + 1.0), Align2::LEFT_CENTER, concat!("v", env!("CARGO_PKG_VERSION")), theme::regular(10.0), p.muted);
         // status pill
         let status = self.status_text();
         let galley = painter.layout_no_wrap(status, theme::regular(10.5), p.muted);
@@ -617,7 +618,7 @@ impl App {
         let p = self.pal;
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 28.0), Sense::click_and_drag());
         if resp.drag_started() { ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag); }
-        resp.on_hover_text(self.status_text());
+        resp.on_hover_text(format!("Flashless v{}\n{}", env!("CARGO_PKG_VERSION"), self.status_text()));
         let cy = rect.center().y;
         theme::brand(ui.painter(), egui::pos2(rect.left() + 16.0, cy), 7.0, &p);
         ui.painter().circle_filled(egui::pos2(rect.left() + 30.0, cy), 3.0, if self.clock.is_live { p.ready } else { p.muted });

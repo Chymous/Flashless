@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.5
+
+- The version number is shown in the overlay header, the compact view's tooltip and the tray icon tooltip.
+
 ## 1.0.4
 
 - Flashless now updates itself. When a new version is out, the overlay shows "Update to x.y.z"
