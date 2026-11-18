@@ -87,6 +87,11 @@ pub fn download(r: &Release) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Removes the setup left in %TEMP% by the last in-app update (call once on start).
+pub fn cleanup() {
+    let _ = std::fs::remove_dir_all(std::env::temp_dir().join("Flashless-Update"));
+}
+
 /// Runs the downloaded setup silently: it closes Flashless, replaces it, keeps the user's shortcut
 /// choices and settings, and starts the new version.
 pub fn run_installer(setup: &std::path::Path) -> Result<(), String> {

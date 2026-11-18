@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The setup downloaded by an in-app update is deleted from the temp folder on the next start.
+
 ## 1.0.6
 
 - The opacity slider moved from the overlay footer to Settings > Appearance, so the footer has room for

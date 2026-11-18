@@ -106,6 +106,7 @@ impl App {
             if let Ok(Some(d)) = crate::data::update(&version, &cache) { let _ = d_tx.send(d); w2(); }
         });
 
+        crate::update::cleanup();
         let (u_tx, update_rx) = channel();
         if settings.check_updates && !crate::update::REPO.is_empty() {
             let w3 = wake.clone();
