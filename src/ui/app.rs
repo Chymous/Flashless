@@ -777,15 +777,6 @@ impl App {
                 if link.clicked() { let ctx = ui.ctx().clone(); self.start_update(&ctx); }
                 if link.secondary_clicked() { win::open_url(&page); }
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let mut op = self.settings.opacity;
-                ui.spacing_mut().slider_width = 64.0;
-                ui.spacing_mut().interact_size.y = 14.0; // smaller knob
-                if ui.add(egui::Slider::new(&mut op, 0.3..=1.0).show_value(false).trailing_fill(true)).on_hover_text("Opacity").changed() {
-                    self.settings.opacity = op;
-                }
-                ui.label(egui::RichText::new("\u{E706}").font(theme::icon(11.0)).color(p.muted));
-            });
         });
     }
 }

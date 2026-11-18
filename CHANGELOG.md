@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.6
+
+- The opacity slider moved from the overlay footer to Settings > Appearance, so the footer has room for
+  the update link.
+
 ## 1.0.5
 
 - The version number is shown in the overlay header, the compact view's tooltip and the tray icon tooltip.

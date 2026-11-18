@@ -309,6 +309,12 @@ fn appearance_card(ui: &mut egui::Ui, ctx: &egui::Context, app: &mut App, st: &m
         ui.add_enabled(st.draft.flash_alert, egui::Checkbox::new(&mut st.draft.flash_alert_sound, "Also play the Windows notification sound"));
         ui.checkbox(&mut st.draft.check_updates, "Check for a new version when Flashless starts");
         ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label("Overlay opacity");
+            ui.add(egui::Slider::new(&mut st.draft.opacity, 0.3..=1.0).show_value(false).trailing_fill(true));
+            ui.label(format!("{:.0}%", st.draft.opacity * 100.0));
+        });
+        ui.add_space(4.0);
         ui.label("Spell order in the overlay");
         ui.horizontal(|ui| {
             use crate::settings::SpellOrder;
