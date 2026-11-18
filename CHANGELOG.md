@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.7
 
 - Cosmic Insight is detected automatically: when an enemy with the Inspiration tree uses a summoner
   spell again before its timer ran out, and Cosmic Insight's +18 haste explains it, Flashless marks

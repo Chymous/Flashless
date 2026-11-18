@@ -7,9 +7,9 @@ use std::sync::mpsc::{channel, Receiver};
 
 /// Shown instead of the feature list when an older version is installed.
 const WHATS_NEW: &[&str] = &[
-    "Opacity moved to Settings > Appearance; tidier overlay footer",
-    "Version number in the overlay header and tray tooltip (from 1.0.5)",
-    "Updates itself: when a new version is out, click \"Update to ...\" in the overlay (from 1.0.4)",
+    "Detects Cosmic Insight by itself when an enemy's spell comes back early",
+    "Boots bought while a spell is cooling down now shorten its timer, like in game",
+    "Updates itself from the overlay; version shown in the header (from 1.0.4)",
     "Catches more Flashes, and an enemy's Flash tile pulses when it comes back up (from 1.0.3)",
 ];
 
