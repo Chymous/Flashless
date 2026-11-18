@@ -307,7 +307,7 @@ fn appearance_card(ui: &mut egui::Ui, ctx: &egui::Context, app: &mut App, st: &m
         ui.checkbox(&mut st.draft.click_through_in_game, "Clicks go through the overlay while League is in front (use hotkeys, or alt-tab to edit)");
         ui.checkbox(&mut st.draft.flash_alert, "Pulse an enemy's Flash when it comes back up");
         ui.add_enabled(st.draft.flash_alert, egui::Checkbox::new(&mut st.draft.flash_alert_sound, "Also play the Windows notification sound"));
-        if !crate::update::REPO.is_empty() { ui.checkbox(&mut st.draft.check_updates, "Check GitHub for a new version when Flashless starts"); }
+        ui.checkbox(&mut st.draft.check_updates, "Check for a new version when Flashless starts");
         ui.add_space(4.0);
         ui.label("Spell order in the overlay");
         ui.horizontal(|ui| {

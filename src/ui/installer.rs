@@ -7,12 +7,10 @@ use std::sync::mpsc::{channel, Receiver};
 
 /// Shown instead of the feature list when an older version is installed.
 const WHATS_NEW: &[&str] = &[
-    "Catches more Flashes: chat lines whose time can't be read are timed from when they appeared",
-    "Flash-back alert: an enemy's Flash tile pulses when it comes back up (optional sound)",
-    "Clicks go through the overlay while League is in front, so no accidental clicks mid-fight",
-    "Options: compact mode during games, hide the overlay outside games, Flash left or right",
-    "Spells start 7 s into their cooldown (time to see and call it), adjustable in Settings",
-    "Fixes: timers no longer reset mid-game, smoother on your PC, tidier chat logs",
+    "Updates itself: when a new version is out, click \"Update to ...\" in the overlay",
+    "Catches more Flashes, and an enemy's Flash tile pulses when it comes back up (from 1.0.3)",
+    "Clicks go through the overlay while League is in front (from 1.0.3)",
+    "Options: compact mode during games, hide outside games, Flash left or right (from 1.0.3)",
 ];
 
 pub struct Installer {

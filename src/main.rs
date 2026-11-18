@@ -39,6 +39,19 @@ fn main() {
         capture_test(args.get(1).map(String::as_str).unwrap_or("Flashless"));
         return;
     }
+    // diagnostic: Flashless.exe --check-update [--download]  (latest release; --download fetches and verifies it, installs nothing)
+    if args.first().is_some_and(|a| a == "--check-update") {
+        match update::latest() {
+            Some(r) => {
+                println!("latest {} (this is {}), {} bytes, sha256 {}", r.version, env!("CARGO_PKG_VERSION"), r.size, r.sha256.as_deref().unwrap_or("not listed"));
+                if has("--download") {
+                    match update::download(&r) { Ok(p) => println!("downloaded and verified: {}", p.display()), Err(e) => println!("download: {e}") }
+                }
+            }
+            None => println!("no release found"),
+        }
+        return;
+    }
     if args.first().is_some_and(|a| a == "--ocr-test") {
         ocr_test(&args[1..]);
         return;
@@ -57,6 +70,8 @@ fn main() {
     if win::shell::should_install(&args) {
         if silent {
             if let Err(e) = win::shell::install(!has("--no-desktop"), !has("--no-start-menu")) { eprintln!("{e}"); std::process::exit(1); }
+            // in-app updates pass --relaunch so the new version comes back up by itself
+            if has("--relaunch") { win::shell::launch_installed(); }
             return;
         }
         let options = eframe::NativeOptions {

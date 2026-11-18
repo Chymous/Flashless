@@ -1,6 +1,13 @@
 # Changelog
 
-Each version's section is used as its GitHub release notes.
+## 1.0.4
+
+- Flashless now updates itself. When a new version is out, the overlay shows "Update to x.y.z"
+  (a small icon in compact mode). Click it and Flashless downloads the new setup from this
+  repository's releases, checks it against the published SHA-256, installs it and restarts with your
+  settings and shortcuts kept. It never updates during a game. Right click the link to see what's new.
+- "Check for a new version when Flashless starts" can be turned off in Settings > Appearance.
+- Releases now carry a single Flashless-Setup.exe, which both installs and updates.
 
 ## 1.0.3
 
@@ -20,7 +27,6 @@ Each version's section is used as its GitHub release notes.
 - Lighter while you play: Windows hands over at most one captured frame a second, and the Live Client
   API is polled every 5 s instead of every second.
 - `chat.log` keeps only the last three games.
-- Update check (off until releases are public) and a code-signing script (`scripts/sign.ps1`).
 
 ## 1.0.2
 

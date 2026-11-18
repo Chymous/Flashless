@@ -8,16 +8,7 @@ use std::path::PathBuf;
 
 pub fn data_dir() -> PathBuf {
     let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    let dir = base.join("Flashless");
-    // one-time move from the folder used before the rename
-    let old = base.join("SpellCall-rs");
-    if !dir.exists() && old.exists() {
-        if std::fs::rename(&old, &dir).is_err() {
-            let _ = std::fs::create_dir_all(&dir);
-            for f in ["settings.json", "gamedata.json"] { let _ = std::fs::copy(old.join(f), dir.join(f)); }
-        }
-    }
-    dir
+    base.join("Flashless")
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -26,7 +17,7 @@ pub struct Settings {
     pub auto_copy: bool,
     pub copy_delay_ms: u64,
     /// Seconds a spell is assumed to have been used before Flashless hears about it (click, hotkey or chat),
-    /// for the time it takes to see it and call it. Saved under a new name so old installs pick up the 7 s default.
+    /// for the time it takes to see it and call it.
     #[serde(rename = "CallDelaySeconds")]
     pub reaction_offset_seconds: f64,
     pub chat_key_delay_ms: u64,
@@ -57,7 +48,7 @@ pub struct Settings {
     pub flash_alert: bool,
     /// Also play the Windows notification sound then.
     pub flash_alert_sound: bool,
-    /// Ask GitHub for a newer release on start (only once a release repository is set in the build).
+    /// Ask GitHub for a newer release on start.
     pub check_updates: bool,
     /// Which summoner spell sits in the left tile.
     pub spell_order: SpellOrder,

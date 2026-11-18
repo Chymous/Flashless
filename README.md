@@ -16,7 +16,7 @@ one-line message for team chat (`Mid 1554f | Sup 1657f`). Written in Rust, singl
 - Flash-back alert: the tile pulses when an enemy's Flash is up again (optional sound).
 - Full and compact views, light and dark themes, Flash left / right / game order.
 - Clicks pass through the overlay while League is in front (optional), hide outside games (optional).
-- Keyboard and mouse (Mouse 3/4/5) hotkeys, tray icon, per-user installer and updater.
+- Keyboard and mouse (Mouse 3/4/5) hotkeys, tray icon, per-user installer, and one-click updates from the overlay.
 
 ## Why Rust
 
@@ -40,7 +40,8 @@ Download `Flashless-Setup.exe` from [Releases](../../releases). Version history:
 
 - `Flashless-Setup.exe`: run it, click Install. Per-user, no admin. Installs to
   `%LOCALAPPDATA%\Programs\Flashless` with Start menu and desktop shortcuts and an Installed apps entry.
-  Running a newer setup or `Flashless-Update-x.y.z.exe` updates in place and keeps settings.
+  Updates: click "Update to x.y.z" in the overlay when one is available, or run a newer setup.
+  Settings and shortcuts are kept.
 - Windows search finds "Flashless"; Win+R `flashless` also works.
 - Uninstall: Settings > Apps > Installed apps > Flashless, or `Flashless.exe --uninstall`.
 - Silent: `Flashless-Setup.exe --silent [--no-desktop] [--no-start-menu]`, `Flashless.exe --uninstall --silent`.
@@ -60,19 +61,6 @@ Settings (gear icon) has the roster, message options, chat area (draw / auto-det
 cargo test
 cargo build --release
 ```
-
-Diagnostics:
-
-```
-Flashless.exe --ocr-test <screenshot.png> [left top width height] [champions...]
-Flashless.exe --capture-test "<window title>"
-```
-
-Releasing: bump the version in `Cargo.toml` and `assets/app.rc`, add its section to `CHANGELOG.md`,
-commit and push, then `scripts\release.ps1` (tags `vX.Y.Z` and publishes the installer and updater).
-
-Signing: `scripts\sign.ps1 -DryRun` lists what would be signed; see the top of the script for the
-certificate or Azure Trusted Signing setup (read from environment variables, nothing stored in the repo).
 
 ## How it is built
 

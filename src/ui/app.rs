@@ -1,4 +1,4 @@
-//! The overlay: enemy rows with spell / ult tiles, the chat message preview, and all background wiring
+//! The overlay: enemy rows with summoner spell tiles, the chat message preview, and all background wiring
 //! (live game API, hotkeys, chat reading, clipboard, typing, data updates).
 
 use super::setup::SetupState;
@@ -64,6 +64,8 @@ pub struct App {
     force_show: bool,
     update: Option<crate::update::Release>,
     update_rx: Receiver<crate::update::Release>,
+    /// In-app update in progress: the downloaded setup (or why it failed) arrives here.
+    updating: Option<Receiver<Result<std::path::PathBuf, String>>>,
 }
 
 /// A chat detection whose time could not be read yet.
@@ -117,7 +119,7 @@ impl App {
             flash: None, copy_due: None, seen_revision: 0, expanded: None, setup: None, hidden: false, hwnd_done: false,
             last_lines: HashSet::new(), last_detections: HashMap::new(), last_size: Vec2::ZERO, last_pos: None, next_theme_check: Instant::now(),
             demo, sightings: HashMap::new(), last_scan: None, alerts: HashMap::new(), passthrough: false, was_live: false,
-            force_show: false, update: None, update_rx,
+            force_show: false, update: None, update_rx, updating: None,
         };
         let failed = hotkeys::set_bindings(&app.settings.hotkeys);
         if !failed.is_empty() { app.flash(format!("bad or duplicate hotkey: {}", failed.join(", "))); }
@@ -127,6 +129,23 @@ impl App {
     }
 
     fn rules(&self) -> &CooldownRules { &self.settings.rules }
+
+    fn save_window_state(&mut self) {
+        if let Some(p) = self.last_pos { self.settings.left = Some(p.x); self.settings.top = Some(p.y); }
+        self.settings.save();
+    }
+
+    /// Downloads and installs the newer release. Not during a game: the restart would drop your timers.
+    fn start_update(&mut self, ctx: &egui::Context) {
+        if self.updating.is_some() { return; }
+        let Some(r) = self.update.clone() else { return };
+        if self.clock.is_live { self.flash("update after the game"); return; }
+        let (tx, rx) = channel();
+        let c = ctx.clone();
+        std::thread::spawn(move || { let _ = tx.send(crate::update::download(&r)); c.request_repaint(); });
+        self.updating = Some(rx);
+        self.flash(format!("downloading {}...", self.update.as_ref().map(|u| u.version.clone()).unwrap_or_default()));
+    }
 
     /// Hidden by the "hide outside game" option right now.
     fn auto_hidden(&self) -> bool {
@@ -369,6 +388,16 @@ impl App {
         if let Ok(s) = self.status_rx.try_recv() { self.flash(s); }
 
         if let Ok(r) = self.update_rx.try_recv() { self.flash(format!("Flashless {} is available", r.version)); self.update = Some(r); }
+        if let Some(rx) = &self.updating {
+            if let Ok(res) = rx.try_recv() {
+                self.updating = None;
+                match res.and_then(|setup| { self.save_window_state(); crate::update::run_installer(&setup) }) {
+                    // the installer closes this copy, replaces it and starts the new one
+                    Ok(()) => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                    Err(e) => self.flash(format!("update failed: {e}")),
+                }
+            }
+        }
         let now = self.clock.now();
         if self.settings.flash_alert {
             let mut fresh = Vec::new();
@@ -486,8 +515,7 @@ impl eframe::App for App {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         win::tray::remove();
-        if let Some(p) = self.last_pos { self.settings.left = Some(p.x); self.settings.top = Some(p.y); }
-        self.settings.save();
+        self.save_window_state();
     }
 }
 
@@ -593,6 +621,12 @@ impl App {
         let cy = rect.center().y;
         theme::brand(ui.painter(), egui::pos2(rect.left() + 16.0, cy), 7.0, &p);
         ui.painter().circle_filled(egui::pos2(rect.left() + 30.0, cy), 3.0, if self.clock.is_live { p.ready } else { p.muted });
+        if let Some(v) = self.update.as_ref().map(|u| u.version.clone()) {
+            let ur = Rect::from_center_size(egui::pos2(rect.left() + 44.0, cy), egui::vec2(16.0, 16.0));
+            let ub = ui.interact(ur, ui.id().with("upd"), Sense::click()).on_hover_text(format!("Update to {v}: click to install"));
+            ui.painter().text(ur.center(), Align2::CENTER_CENTER, "\u{E896}", theme::icon(10.0), if ub.hovered() { p.accent_deep } else { p.accent });
+            if ub.clicked() { let ctx = ctx.clone(); self.start_update(&ctx); }
+        }
         let r = Rect::from_min_size(egui::pos2(rect.right() - 30.0, cy - 11.0), egui::vec2(24.0, 22.0));
         let b = ui.interact(r, ui.id().with("expand"), Sense::click()).on_hover_text("Full view");
         if b.hovered() { ui.painter().rect_filled(r, 6.0_f32, p.surface_hover); }
@@ -735,8 +769,12 @@ impl App {
                 self.settings.save();
             }
             if let Some(r) = &self.update {
-                let (v, url) = (r.version.clone(), r.url.clone());
-                if ui.link(egui::RichText::new(format!("Update {v}")).size(11.5).color(p.accent_deep)).on_hover_text("Open the download page").clicked() { win::open_url(&url); }
+                let (v, page) = (r.version.clone(), r.page.clone());
+                let label = if self.updating.is_some() { "Updating...".to_string() } else { format!("Update to {v}") };
+                let link = ui.link(egui::RichText::new(label).size(11.5).color(p.accent_deep))
+                    .on_hover_text("Download and install it now (Flashless restarts, settings are kept).\nRight click: see what's new");
+                if link.clicked() { let ctx = ui.ctx().clone(); self.start_update(&ctx); }
+                if link.secondary_clicked() { win::open_url(&page); }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let mut op = self.settings.opacity;
