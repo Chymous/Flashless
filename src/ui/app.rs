@@ -131,6 +131,11 @@ impl App {
 
     fn rules(&self) -> &CooldownRules { &self.settings.rules }
 
+    /// Shows (and logs) what the tracker worked out by itself, such as a detected Cosmic Insight.
+    fn show_tracker_note(&mut self) {
+        if let Some(n) = self.tracker.note.take() { self.chat_log(&format!("INFERRED {n}")); self.flash(n); }
+    }
+
     fn save_window_state(&mut self) {
         if let Some(p) = self.last_pos { self.settings.left = Some(p.x); self.settings.top = Some(p.y); }
         self.settings.save();
@@ -199,6 +204,7 @@ impl App {
         if !self.tracker.register(i, slot, self.settings.reaction_offset_seconds, self.clock.now(), self.clock.is_live, &data, &rules) {
             self.flash("no cooldown data for that");
         }
+        self.show_tracker_note();
     }
 
     fn type_in_chat(&mut self) {
@@ -292,7 +298,10 @@ impl App {
             let first_seen = self.last_detections.get(&id).copied().unwrap_or(self.clock.now());
             let just_appeared = self.clock.now() - first_seen <= 4.0;
             detections.insert(id.clone(), first_seen);
-            let remaining = self.tracker.remaining(d.enemy, d.slot, self.clock.now());
+            let mut remaining = self.tracker.remaining(d.enemy, d.slot, self.clock.now());
+            // still "on cooldown" here, but Cosmic Insight would have it back by now: let the use through
+            // (register() then marks the enemy as having it)
+            if remaining > 15.0 && self.tracker.cosmic_insight_explains(d.enemy, d.slot, self.clock.now(), &self.settings.rules) { remaining = 0.0; }
             let res = self.filter.accept(&d, &champ, self.clock.now(), remaining, just_appeared);
             let sighting = self.sightings.entry(id.clone()).or_insert(Sighting { first_seen, settled: false, trustworthy, enemy: d.enemy, line: line.clone() });
             sighting.enemy = d.enemy;
@@ -313,6 +322,7 @@ impl App {
                     let what = data.find_spell(self.tracker.enemies[d.enemy].spell_id(d.slot)).map(|x| x.name.clone()).unwrap_or("spell".into());
                     let who = self.tracker.enemies[d.enemy].name.clone();
                     self.flash(format!("chat: {who} {what}"));
+                    self.show_tracker_note();
                 }
             }
         }
@@ -325,13 +335,14 @@ impl App {
             s.settled = true;
             let (i, ago, line) = (s.enemy, now - s.first_seen, s.line.clone());
             if self.tracker.enemies.get(i).is_none_or(|e| e.champion_id != id.0) { continue; }
-            if self.tracker.remaining(i, id.1, now) > 15.0 { continue; }
+            if self.tracker.remaining(i, id.1, now) > 15.0 && !self.tracker.cosmic_insight_explains(i, id.1, now - ago, &self.settings.rules) { continue; }
             let (data, rules) = (self.data.clone(), self.rules().clone());
             if self.tracker.register(i, id.1, ago + self.settings.reaction_offset_seconds, now, true, &data, &rules) {
                 self.chat_log(&format!("{} {:?} -> registered from first sighting, {ago:.0}s ago  | {line}", id.0, id.1));
                 let what = data.find_spell(self.tracker.enemies[i].spell_id(id.1)).map(|x| x.name.clone()).unwrap_or("spell".into());
                 let who = self.tracker.enemies[i].name.clone();
                 self.flash(format!("chat: {who} {what}"));
+                self.show_tracker_note();
             }
         }
         // a line that scrolled away ends its sighting
@@ -365,7 +376,7 @@ impl App {
                 Some(s) => {
                     self.clock.sync_live(s.game_time);
                     let before: Vec<String> = self.tracker.enemies.iter().map(|e| e.champion_id.clone()).collect();
-                    if self.tracker.apply_live(&s, &self.data) {
+                    if self.tracker.apply_live(&s, &self.data, &self.settings.rules) {
                         self.filter.reset();
                         if !self.tracker.enemies.iter().any(|e| before.contains(&e.champion_id)) { self.rotate_chat_log(); }
                         let names: Vec<&str> = self.tracker.enemies.iter().map(|e| e.champion_id.as_str()).collect();

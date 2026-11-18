@@ -18,6 +18,8 @@ pub const SLOTS: [Slot; 2] = [Slot::Spell1, Slot::Spell2];
 pub struct ActiveCooldown {
     pub started_at: f64,
     pub ready_at: f64,
+    /// Summoner spell haste the timer currently runs with; when it changes, the time left is rescaled.
+    pub haste: f64,
 }
 
 impl ActiveCooldown {
@@ -91,6 +93,8 @@ pub struct Tracker {
     pub cooldown_revision: u64,
     undo: Vec<(usize, String, Slot, Option<ActiveCooldown>)>,
     last_game_time: Option<f64>,
+    /// What the last register() worked out on its own (e.g. "Diana has Cosmic Insight"), for the UI.
+    pub note: Option<String>,
 }
 
 impl Tracker {
@@ -108,12 +112,50 @@ impl Tracker {
         (spell.cooldown > 0.0).then(|| cooldown::for_summoner(spell, e, ctx, data, rules))
     }
 
-    /// Records that the ability was used `seconds_ago` seconds before `now`.
+    /// Records that the ability was used `seconds_ago` seconds before `now`. If it was used again before
+    /// its timer ran out, and Cosmic Insight (+18 haste) explains the early return, the enemy is marked as
+    /// having it and their running timers are corrected.
     pub fn register(&mut self, i: usize, slot: Slot, seconds_ago: f64, now: f64, is_live: bool, data: &GameData, rules: &CooldownRules) -> bool {
-        let Some(cd) = self.preview(i, slot, self.context(now, is_live), data, rules) else { return false };
+        self.note = None;
+        let ctx = self.context(now, is_live);
+        let Some(cd) = self.preview(i, slot, ctx, data, rules) else { return false };
         let start = now - seconds_ago.max(0.0) + cd.start_delay;
-        self.set(i, slot, Some(ActiveCooldown { started_at: start, ready_at: start + cd.cooldown }));
+        if self.cosmic_insight_explains(i, slot, start, rules) {
+            self.enemies[i].cosmic_insight = true;
+            self.note = Some(format!("{} has Cosmic Insight (spell back early)", self.enemies[i].name));
+            self.rescale(i, now, ctx, data, rules);
+        }
+        let Some(cd) = self.preview(i, slot, ctx, data, rules) else { return false };
+        self.set(i, slot, Some(ActiveCooldown { started_at: start, ready_at: start + cd.cooldown, haste: cd.haste }));
         true
+    }
+
+    /// The spell is used again (its new cooldown starting at `new_start`) while its timer still runs, and
+    /// would have been ready by then with Cosmic Insight's extra haste. Allows 5 s for chat and reaction timing.
+    pub fn cosmic_insight_explains(&self, i: usize, slot: Slot, new_start: f64, rules: &CooldownRules) -> bool {
+        let Some(e) = self.enemies.get(i) else { return false };
+        let Some(prev) = e.cooldowns.get(&slot) else { return false };
+        if e.cosmic_insight || !e.has_inspiration || prev.ready_at - new_start <= 3.0 { return false; }
+        let ci = rules.cosmic_insight_summoner_haste as f64;
+        let ready_with_ci = prev.started_at + prev.duration() * (100.0 + prev.haste) / (100.0 + prev.haste + ci);
+        new_start >= ready_with_ci - 5.0
+    }
+
+    /// Running timers follow haste changes the way the game does: the time left shrinks (or grows) by
+    /// (100 + old haste) / (100 + new haste). Returns true if any timer changed.
+    pub fn rescale(&mut self, i: usize, now: f64, ctx: GameContext, data: &GameData, rules: &CooldownRules) -> bool {
+        let slots: Vec<Slot> = self.enemies[i].cooldowns.keys().copied().collect();
+        let mut changed = false;
+        for slot in slots {
+            let Some(cd) = self.preview(i, slot, ctx, data, rules) else { continue };
+            let cur = self.enemies[i].cooldowns[&slot];
+            if (cd.haste - cur.haste).abs() < 0.01 || cur.ready_at <= now { continue; }
+            let left = (cur.ready_at - now.max(cur.started_at)) * (100.0 + cur.haste) / (100.0 + cd.haste);
+            let ready = now.max(cur.started_at) + left;
+            self.enemies[i].cooldowns.insert(slot, ActiveCooldown { ready_at: ready, haste: cd.haste, ..cur });
+            changed = true;
+        }
+        changed
     }
 
     pub fn clear(&mut self, i: usize, slot: Slot) {
@@ -128,16 +170,10 @@ impl Tracker {
         }
     }
 
-    /// Re-derives an enemy's running cooldowns after a haste estimate changed.
+    /// Applies a haste estimate change (Cosmic Insight ticked, manual haste) to the running timers.
     pub fn recalculate(&mut self, i: usize, now: f64, is_live: bool, data: &GameData, rules: &CooldownRules) {
         let ctx = self.context(now, is_live);
-        let slots: Vec<Slot> = self.enemies[i].cooldowns.keys().copied().collect();
-        for slot in slots {
-            if let Some(cd) = self.preview(i, slot, ctx, data, rules) {
-                let cur = self.enemies[i].cooldowns[&slot];
-                self.enemies[i].cooldowns.insert(slot, ActiveCooldown { ready_at: cur.started_at + cd.cooldown, ..cur });
-            }
-        }
+        self.rescale(i, now, ctx, data, rules);
         self.touch_cooldowns();
     }
 
@@ -184,7 +220,7 @@ impl Tracker {
 
     /// Applies a Live Client snapshot: a different set of champions, or the timer running backwards,
     /// means a new match. Returns true if the roster was replaced.
-    pub fn apply_live(&mut self, snap: &LiveSnapshot, data: &GameData) -> bool {
+    pub fn apply_live(&mut self, snap: &LiveSnapshot, data: &GameData, rules: &CooldownRules) -> bool {
         self.map_number = snap.map_number;
         let new_game = self.last_game_time.is_some_and(|t| snap.game_time < t - 30.0);
         self.last_game_time = Some(snap.game_time);
@@ -213,9 +249,11 @@ impl Tracker {
             return true;
         }
         let mut changed = false;
+        let mut items_changed = Vec::new();
         for fresh in incoming {
             if let Some(cur) = self.enemies.iter_mut().find(|e| e.champion_id == fresh.champion_id) {
                 changed |= cur.level != fresh.level || cur.item_ids != fresh.item_ids || cur.role != fresh.role;
+                if cur.item_ids != fresh.item_ids { items_changed.push(fresh.champion_id.clone()); }
                 cur.level = fresh.level;
                 cur.item_ids = fresh.item_ids;
                 cur.spell1_id = fresh.spell1_id;
@@ -228,7 +266,13 @@ impl Tracker {
         let before: Vec<String> = self.enemies.iter().map(|e| e.champion_id.clone()).collect();
         sort_by_role(&mut self.enemies);
         if self.enemies.iter().map(|e| &e.champion_id).ne(before.iter()) { self.undo.clear(); changed = true; }
-        if changed { self.touch(); }
+        // boots bought (or sold) while a spell is cooling down change the time left on it
+        let ctx = GameContext { game_time: snap.game_time, is_live: true, map_number: if snap.map_number == 0 { 11 } else { snap.map_number } };
+        let mut timers = false;
+        for id in items_changed {
+            if let Some(i) = self.enemies.iter().position(|e| e.champion_id == id) { timers |= self.rescale(i, snap.game_time, ctx, data, rules); }
+        }
+        if timers { self.touch_cooldowns(); } else if changed { self.touch(); }
         false
     }
 
@@ -335,15 +379,70 @@ mod tests {
             spell2_name: "Heal".into(), has_inspiration: false };
         let snap = |enemies: Vec<live::LivePlayer>, t: f64| LiveSnapshot { game_time: t, game_mode: "CLASSIC".into(), map_number: 11, enemies };
         let mut t = Tracker::default();
-        t.apply_live(&snap(vec![p("Diana", "CHAOS"), p("Vayne", "CHAOS")], 1000.0), &d);
+        t.apply_live_default(&snap(vec![p("Diana", "CHAOS"), p("Vayne", "CHAOS")], 1000.0), &d);
         assert!(t.register(0, Slot::Spell1, 0.0, 1000.0, true, &d, &r));
         assert!(t.register(1, Slot::Spell1, 0.0, 1010.0, true, &d, &r));
         // one poll lists everyone (your team not found)
-        t.apply_live(&snap(vec![p("Diana", "CHAOS"), p("Vayne", "CHAOS"), p("Ahri", "ORDER"), p("Jinx", "ORDER")], 1012.0), &d);
+        t.apply_live_default(&snap(vec![p("Diana", "CHAOS"), p("Vayne", "CHAOS"), p("Ahri", "ORDER"), p("Jinx", "ORDER")], 1012.0), &d);
         assert_eq!(t.enemies.len(), 2);
         // a late champion change in the same game keeps the others' timers
-        t.apply_live(&snap(vec![p("Diana", "CHAOS"), p("Garen", "CHAOS")], 1014.0), &d);
+        t.apply_live_default(&snap(vec![p("Diana", "CHAOS"), p("Garen", "CHAOS")], 1014.0), &d);
         let diana = t.enemies.iter().position(|e| e.champion_id == "Diana").unwrap();
         assert!(t.remaining(diana, Slot::Spell1, 1014.0) > 200.0);
+    }
+
+    impl Tracker {
+        fn apply_live_default(&mut self, snap: &LiveSnapshot, data: &GameData) -> bool { self.apply_live(snap, data, &CooldownRules::default()) }
+    }
+
+    #[test]
+    fn early_repeat_flash_means_cosmic_insight() {
+        let d = GameData::embedded();
+        let r = CooldownRules::default();
+        let mut t = Tracker::default();
+        let mut e = test_enemy("Diana", 9, &[]);
+        e.has_inspiration = true;
+        t.set_roster(vec![e]);
+        assert!(t.register(0, Slot::Spell1, 0.0, 100.0, true, &d, &r)); // Flash, 300 s
+        // used again 256 s later: impossible without haste, matches 300 * 100 / 118 = 254 s
+        assert!(t.register(0, Slot::Spell1, 0.0, 356.0, true, &d, &r));
+        assert!(t.enemies[0].cosmic_insight);
+        assert!(t.note.is_some());
+        assert!((t.remaining(0, Slot::Spell1, 356.0) - 254.24).abs() < 0.05);
+
+        // far too early (a misclick or a missed use): no guess
+        let mut t2 = Tracker::default();
+        let mut e2 = test_enemy("Diana", 9, &[]);
+        e2.has_inspiration = true;
+        t2.set_roster(vec![e2]);
+        t2.register(0, Slot::Spell1, 0.0, 100.0, true, &d, &r);
+        t2.register(0, Slot::Spell1, 0.0, 200.0, true, &d, &r);
+        assert!(!t2.enemies[0].cosmic_insight);
+
+        // no Inspiration tree: Cosmic Insight is impossible
+        let mut t3 = Tracker::default();
+        t3.set_roster(vec![test_enemy("Diana", 9, &[])]);
+        t3.register(0, Slot::Spell1, 0.0, 100.0, true, &d, &r);
+        t3.register(0, Slot::Spell1, 0.0, 356.0, true, &d, &r);
+        assert!(!t3.enemies[0].cosmic_insight);
+    }
+
+    #[test]
+    fn boots_bought_mid_cooldown_shorten_it() {
+        let d = GameData::embedded();
+        let r = CooldownRules::default();
+        let p = |items: Vec<i64>| live::LivePlayer { champion_raw: "game_character_displayname_Diana".into(), champion_name: "Diana".into(), team: "CHAOS".into(),
+            position: String::new(), level: 9, item_ids: items, spell1_raw: String::new(), spell1_name: "Flash".into(), spell2_raw: String::new(),
+            spell2_name: "Ignite".into(), has_inspiration: false };
+        let snap = |items: Vec<i64>, t: f64| LiveSnapshot { game_time: t, game_mode: "CLASSIC".into(), map_number: 11, enemies: vec![p(items)] };
+        let mut t = Tracker::default();
+        t.apply_live(&snap(vec![], 100.0), &d, &r);
+        t.register(0, Slot::Spell1, 0.0, 100.0, true, &d, &r); // 300 s, ready at 400
+        // Ionian Boots (+10 haste) at 200: 200 s left becomes 200 * 100 / 110 = 181.8 s
+        t.apply_live(&snap(vec![3158], 200.0), &d, &r);
+        assert!((t.remaining(0, Slot::Spell1, 200.0) - 181.82).abs() < 0.05);
+        // the next Flash gets the boots from the start
+        t.register(0, Slot::Spell1, 0.0, 400.0, true, &d, &r);
+        assert!((t.remaining(0, Slot::Spell1, 400.0) - 272.73).abs() < 0.05);
     }
 }

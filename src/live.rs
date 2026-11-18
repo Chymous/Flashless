@@ -202,7 +202,7 @@ mod tests {
         let snap = parse(&json).unwrap();
         assert_eq!(snap.enemies.len(), 2);
         let mut t = crate::tracker::Tracker::default();
-        assert!(t.apply_live(&snap, &d));
+        assert!(t.apply_live(&snap, &d, &crate::cooldown::CooldownRules::default()));
         let lucian = &t.enemies[0];
         assert_eq!(lucian.champion_id, "Lucian");
         assert_eq!(lucian.spell1_id.as_deref(), Some("SummonerFlash"));
@@ -220,12 +220,12 @@ mod tests {
         let me = player("Me", "Ahri", "ORDER", "", 9, "Flash", "Ignite", "", 8000);
         let foe = |lvl| player("Foe1", "Lucian", "CHAOS", "", lvl, "Flash", "Heal", "", 8000);
         let mut t = crate::tracker::Tracker::default();
-        t.apply_live(&parse(&game(700.0, &[me.clone(), foe(8)])).unwrap(), &d);
+        t.apply_live(&parse(&game(700.0, &[me.clone(), foe(8)])).unwrap(), &d, &crate::cooldown::CooldownRules::default());
         t.register(0, crate::tracker::Slot::Spell1, 0.0, 700.0, true, &d, &r);
-        assert!(!t.apply_live(&parse(&game(701.0, &[me.clone(), foe(9)])).unwrap(), &d));
+        assert!(!t.apply_live(&parse(&game(701.0, &[me.clone(), foe(9)])).unwrap(), &d, &crate::cooldown::CooldownRules::default()));
         assert_eq!(t.enemies[0].level, 9);
         assert_eq!(t.enemies[0].cooldowns.len(), 1);
-        assert!(t.apply_live(&parse(&game(20.0, &[me, foe(1)])).unwrap(), &d));
+        assert!(t.apply_live(&parse(&game(20.0, &[me, foe(1)])).unwrap(), &d, &crate::cooldown::CooldownRules::default()));
         assert!(t.enemies[0].cooldowns.is_empty());
     }
 

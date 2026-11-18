@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Cosmic Insight is detected automatically: when an enemy with the Inspiration tree uses a summoner
+  spell again before its timer ran out, and Cosmic Insight's +18 haste explains it, Flashless marks
+  them as having it and corrects their timers (works from chat, clicks and hotkeys).
+- Boots bought while a spell is cooling down now shorten the time left, the way the game does
+  (Ionian Boots, Crimson Lucidity). Ticking Cosmic Insight by hand does the same.
 - The setup downloaded by an in-app update is deleted from the temp folder on the next start.
 
 ## 1.0.6
