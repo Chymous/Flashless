@@ -36,6 +36,8 @@ most one captured frame a second, and polls the Live Client API every 5 s.
 
 ## Install
 
+Download `Flashless-Setup.exe` from [Releases](../../releases). Version history: [CHANGELOG.md](CHANGELOG.md).
+
 - `Flashless-Setup.exe`: run it, click Install. Per-user, no admin. Installs to
   `%LOCALAPPDATA%\Programs\Flashless` with Start menu and desktop shortcuts and an Installed apps entry.
   Running a newer setup or `Flashless-Update-x.y.z.exe` updates in place and keeps settings.
@@ -65,6 +67,9 @@ Diagnostics:
 Flashless.exe --ocr-test <screenshot.png> [left top width height] [champions...]
 Flashless.exe --capture-test "<window title>"
 ```
+
+Releasing: bump the version in `Cargo.toml` and `assets/app.rc`, add its section to `CHANGELOG.md`,
+commit and push, then `scripts\release.ps1` (tags `vX.Y.Z` and publishes the installer and updater).
 
 Signing: `scripts\sign.ps1 -DryRun` lists what would be signed; see the top of the script for the
 certificate or Azure Trusted Signing setup (read from environment variables, nothing stored in the repo).
