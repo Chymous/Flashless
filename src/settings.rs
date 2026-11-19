@@ -50,7 +50,7 @@ pub struct Settings {
     pub flash_alert_sound: bool,
     /// Ask GitHub for a newer release on start.
     pub check_updates: bool,
-    /// Riot API region for the rune lookup (personal builds).
+    /// Riot API region for the optional rune lookup.
     pub riot_region: String,
     /// Which summoner spell sits in the left tile.
     pub spell_order: SpellOrder,

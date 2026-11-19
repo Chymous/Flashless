@@ -1,4 +1,4 @@
-//! Personal builds only (`--features personal`): reads the enemies' full rune pages from the Riot API
+//! Optional: reads the enemies' full rune pages from the Riot API
 //! (Account-V1 for your PUUID, Spectator-V5 for the live game) to know who took Cosmic Insight.
 //! The API key is the user's own, entered in Settings and stored encrypted with Windows DPAPI
 //! (only this Windows user can decrypt it). It is never written in plain text or logged.

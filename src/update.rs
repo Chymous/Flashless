@@ -39,8 +39,6 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
 
 /// The latest release's setup file, if it is newer than this build. Blocking; call from a background thread.
 pub fn check() -> Option<Release> {
-    // a personal build would be replaced by a public one without its features
-    if cfg!(feature = "personal") { return None; }
     latest().filter(|r| is_newer(&r.version, env!("CARGO_PKG_VERSION")))
 }
 

@@ -9,7 +9,6 @@ mod message;
 mod settings;
 mod tracker;
 mod update;
-#[cfg(feature = "personal")]
 mod riot;
 mod ui;
 mod win;

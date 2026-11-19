@@ -7,10 +7,10 @@ use std::sync::mpsc::{channel, Receiver};
 
 /// Shown instead of the feature list when an older version is installed.
 const WHATS_NEW: &[&str] = &[
-    "Top lane quest Teleport shows time left and when it is back, like the other spells",
+    "Optional Riot API key (Settings): enemy runes are read when a game loads, so Cosmic Insight is known",
+    "Top lane quest Teleport shows time left and when it is back (from 1.0.9)",
     "Lucidity boots badge (+10 / +20) next to each enemy (from 1.0.8)",
-    "Cleaner rows (no level line) and round checkboxes (from 1.0.8)",
-    "Detects Cosmic Insight by itself; boots bought mid-cooldown shorten timers (from 1.0.7)",
+    "Detects Cosmic Insight by itself when there is no key (from 1.0.7)",
 ];
 
 pub struct Installer {

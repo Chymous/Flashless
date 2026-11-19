@@ -70,15 +70,11 @@ pub struct App {
     updating: Option<Receiver<Result<std::path::PathBuf, String>>>,
     /// Your Riot ID from the live game.
     me: String,
-    #[cfg(feature = "personal")]
     riot: Option<Receiver<Result<Vec<crate::riot::RunePage>, String>>>,
-    /// Next rune lookup attempt for this game (personal builds), and attempts so far.
-    #[cfg(feature = "personal")]
+    /// Next rune lookup attempt for this game (when a Riot API key is saved), and attempts so far.
     riot_retry: Option<(Instant, u32)>,
-    #[cfg(feature = "personal")]
     riot_retry_count: u32,
     /// Asked for from Settings.
-    #[cfg(feature = "personal")]
     pub riot_lookup_now: bool,
 }
 
@@ -135,10 +131,10 @@ impl App {
             last_lines: HashSet::new(), last_detections: HashMap::new(), last_size: Vec2::ZERO, last_pos: None, next_theme_check: Instant::now(),
             demo, sightings: HashMap::new(), last_scan: None, alerts: HashMap::new(), passthrough: false, was_live: false,
             force_show: false, update: None, update_rx, updating: None, me: String::new(),
-            #[cfg(feature = "personal")] riot_lookup_now: false,
-            #[cfg(feature = "personal")] riot: None,
-            #[cfg(feature = "personal")] riot_retry: None,
-            #[cfg(feature = "personal")] riot_retry_count: 0,
+            riot_lookup_now: false,
+            riot: None,
+            riot_retry: None,
+            riot_retry_count: 0,
         };
         let failed = hotkeys::set_bindings(&app.settings.hotkeys);
         if !failed.is_empty() { app.flash(format!("bad or duplicate hotkey: {}", failed.join(", "))); }
@@ -149,8 +145,7 @@ impl App {
 
     fn rules(&self) -> &CooldownRules { &self.settings.rules }
 
-    /// Personal builds: looks up the enemies' rune pages once per game, retrying while the game is not listed yet.
-    #[cfg(feature = "personal")]
+    /// With a saved Riot API key: looks up the enemies' rune pages once per game, retrying while the game is not listed yet.
     fn pump_riot(&mut self, ctx: &egui::Context) {
         if std::mem::take(&mut self.riot_lookup_now) { self.riot_retry = Some((Instant::now(), 0)); }
         if self.riot.is_none() && crate::riot::has_key() && self.clock.is_live && !self.me.is_empty() {
@@ -464,8 +459,7 @@ impl App {
                         self.filter.reset();
                         if !self.tracker.enemies.iter().any(|e| before.contains(&e.champion_id)) {
                             self.rotate_chat_log();
-                            #[cfg(feature = "personal")]
-                            { self.riot_retry = Some((Instant::now(), 0)); }
+                            self.riot_retry = Some((Instant::now(), 0));
                         }
                         let names: Vec<&str> = self.tracker.enemies.iter().map(|e| e.champion_id.as_str()).collect();
                         self.chat_log(&format!("ROSTER {}", names.join(", ")));
@@ -494,7 +488,6 @@ impl App {
         if let Ok(d) = self.data_rx.try_recv() { self.flash(format!("data updated to {}", d.version)); self.data = d; }
         if let Ok(s) = self.status_rx.try_recv() { self.flash(s); }
 
-        #[cfg(feature = "personal")]
         self.pump_riot(ctx);
         if let Ok(r) = self.update_rx.try_recv() { self.flash(format!("Flashless {} is available", r.version)); self.update = Some(r); }
         if let Some(rx) = &self.updating {
@@ -639,7 +632,7 @@ impl App {
         let cy = rect.center().y;
         theme::brand(&painter, egui::pos2(rect.left() + 22.0, cy), 9.0, &p);
         let name = painter.text(egui::pos2(rect.left() + 38.0, cy), Align2::LEFT_CENTER, "Flashless", theme::semi(13.5), p.text);
-        let title = painter.text(egui::pos2(name.right() + 5.0, cy + 1.0), Align2::LEFT_CENTER, if cfg!(feature = "personal") { concat!("v", env!("CARGO_PKG_VERSION"), "-p") } else { concat!("v", env!("CARGO_PKG_VERSION")) }, theme::regular(10.0), p.muted);
+        let title = painter.text(egui::pos2(name.right() + 5.0, cy + 1.0), Align2::LEFT_CENTER, concat!("v", env!("CARGO_PKG_VERSION")), theme::regular(10.0), p.muted);
         // status pill
         let status = self.status_text();
         let galley = painter.layout_no_wrap(status, theme::regular(10.5), p.muted);

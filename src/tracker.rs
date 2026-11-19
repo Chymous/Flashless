@@ -39,7 +39,7 @@ pub struct Enemy {
     /// Runs the Inspiration tree, so Cosmic Insight is possible (the API never shows minor runes).
     pub has_inspiration: bool,
     pub cosmic_insight: bool,
-    /// Rune page read from the Riot API (personal builds): Cosmic Insight is known, not guessed.
+    /// Rune page read from the Riot API (when a key is saved): Cosmic Insight is known, not guessed.
     pub runes_known: bool,
     /// "Name#TAG", to match Riot API data.
     pub riot_id: String,

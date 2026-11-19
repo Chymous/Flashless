@@ -38,9 +38,7 @@ pub struct SetupState {
     picker: Option<Picker>,
     chrome_for: Option<bool>,
     /// Key being typed; cleared once saved. Never shown again after saving.
-    #[cfg(feature = "personal")]
     key_input: String,
-    #[cfg(feature = "personal")]
     key_note: String,
 }
 
@@ -73,8 +71,8 @@ impl SetupState {
             countdown: None,
             picker: None,
             chrome_for: None,
-            #[cfg(feature = "personal")] key_input: String::new(),
-            #[cfg(feature = "personal")] key_note: String::new(),
+            key_input: String::new(),
+            key_note: String::new(),
         }
     }
 }
@@ -148,7 +146,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 clipboard_card(ui, &mut st, &p);
                 chat_card(ui, ctx, &mut st, &p);
                 appearance_card(ui, ctx, app, &mut st);
-                #[cfg(feature = "personal")]
                 riot_card(ui, app, &mut st, &p);
                 hotkeys_card(ui, ctx, &mut st, &p);
             });
@@ -334,11 +331,10 @@ fn appearance_card(ui: &mut egui::Ui, ctx: &egui::Context, app: &mut App, st: &m
     });
 }
 
-/// Personal builds: your Riot API key (stored encrypted) and region, for reading enemy rune pages.
-#[cfg(feature = "personal")]
+/// Optional: your own Riot API key (stored encrypted) and region, for reading enemy rune pages.
 fn riot_card(ui: &mut egui::Ui, app: &mut App, st: &mut SetupState, p: &Pal) {
-    card(ui, p, "RIOT API (PERSONAL BUILD)", |ui| {
-        hint(ui, p, "Reads each enemy's full rune page at the start of a game, so Cosmic Insight is known instead of guessed. Uses your own key; it is stored encrypted for your Windows account only and never shown again.");
+    card(ui, p, "RIOT API (OPTIONAL)", |ui| {
+        hint(ui, p, "Optional. With your own key from developer.riotgames.com, Flashless reads each enemy's rune page when a game starts, so Cosmic Insight is known instead of guessed. Without one, it is inferred from early pings. The key is stored encrypted for your Windows account only and never shown again.");
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label("Region");

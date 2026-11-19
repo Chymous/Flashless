@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- Optional Riot API key for everyone (Settings > Riot API): with a key saved, Flashless reads each
+  enemy's rune page as soon as a game loads, so Cosmic Insight is known instead of guessed. It retries
+  for a few minutes while the game isn't listed yet. The key is stored encrypted for your Windows
+  account and only sent to Riot. Without a key, nothing changes.
+- One build again: the separate personal build is gone. Copies on 1.0.x-p should install 1.1.0 once by
+  hand; updates are automatic after that.
+
 ## 1.0.9
 
 - The top lane quest Teleport tile is a full tile like the others: time left and the game time it is back
