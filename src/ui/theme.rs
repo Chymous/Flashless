@@ -161,3 +161,28 @@ pub fn brand(painter: &egui::Painter, center: egui::Pos2, radius: f32, _p: &Pal)
 pub fn icon_data() -> egui::IconData {
     egui::IconData { rgba: ICON_64.to_vec(), width: 64, height: 64 }
 }
+
+/// Checkbox drawn as a ring that fills with a dot when on (replaces egui's tick box everywhere).
+pub fn check(ui: &mut egui::Ui, on: &mut bool, text: impl Into<egui::WidgetText>) -> egui::Response {
+    let d = 15.0;
+    let gap = 7.0;
+    let galley = text.into().into_galley(ui, Some(egui::TextWrapMode::Wrap), (ui.available_width() - d - gap).max(20.0), egui::TextStyle::Body);
+    let size = egui::vec2(d + gap + galley.size().x, galley.size().y.max(d));
+    let (rect, mut resp) = ui.allocate_exact_size(size, egui::Sense::click());
+    if resp.clicked() { *on = !*on; resp.mark_changed(); }
+    let checked = *on;
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), checked, galley.text()));
+    if ui.is_rect_visible(rect) {
+        let vis = ui.visuals();
+        let accent = vis.selection.bg_fill;
+        let w = ui.style().interact(&resp);
+        let c = egui::pos2(rect.left() + d / 2.0, rect.center().y);
+        let ring = if checked { accent } else if resp.hovered() { w.fg_stroke.color } else { vis.widgets.inactive.fg_stroke.color.gamma_multiply(0.6) };
+        let p = ui.painter();
+        p.circle(c, d / 2.0 - 0.75, vis.extreme_bg_color, Stroke::new(1.5_f32, ring));
+        if checked { p.circle_filled(c, d / 2.0 - 4.0, accent); }
+        let text_pos = egui::pos2(rect.left() + d + gap, rect.center().y - galley.size().y / 2.0);
+        p.galley(text_pos, galley, vis.text_color());
+    }
+    resp
+}

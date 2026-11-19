@@ -19,6 +19,8 @@ pub struct CooldownRules {
     pub unleashed_teleport_level18: f64,
     /// Teleport's cooldown starts after the 3 s channel and the dash.
     pub teleport_start_delay: f64,
+    /// Unleashed Teleport a top laner gets from the 2026 role quest when they did not take Teleport.
+    pub quest_teleport_cooldown: f64,
 }
 
 impl Default for CooldownRules {
@@ -30,6 +32,7 @@ impl Default for CooldownRules {
             unleashed_teleport_level1: 330.0,
             unleashed_teleport_level18: 240.0,
             teleport_start_delay: 4.0,
+            quest_teleport_cooldown: 420.0,
         }
     }
 }

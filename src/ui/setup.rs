@@ -224,15 +224,15 @@ fn message_card(ui: &mut egui::Ui, st: &mut SetupState, p: &Pal) {
             ui.radio_value(&mut st.draft.message.format, TimeFormat::GameClock, "Game clock when back up (2230 = 22:30)");
             ui.radio_value(&mut st.draft.message.format, TimeFormat::SecondsRemaining, "Seconds remaining");
         });
-        ui.checkbox(&mut st.draft.message.use_roles, "Name enemies by lane (Top, Jg, Mid, ADC, Sup)");
-        ui.checkbox(&mut st.draft.message.longest_first, "Other spells: longest cooldown first (off = soonest first)");
+        theme::check(ui, &mut st.draft.message.use_roles, "Name enemies by lane (Top, Jg, Mid, ADC, Sup)");
+        theme::check(ui, &mut st.draft.message.longest_first, "Other spells: longest cooldown first (off = soonest first)");
         hint(ui, p, "Always one line. Flash leads: enemies are ordered by when their Flash is back.");
     });
 }
 
 fn clipboard_card(ui: &mut egui::Ui, st: &mut SetupState, p: &Pal) {
     card(ui, p, "CLIPBOARD AND TYPING", |ui| {
-        ui.checkbox(&mut st.draft.auto_copy, "Copy the message automatically when a cooldown is registered");
+        theme::check(ui, &mut st.draft.auto_copy, "Copy the message automatically when a cooldown is registered");
         egui::Grid::new("clip-grid").num_columns(2).spacing([12.0, 6.0]).show(ui, |ui| {
             ui.label("Delay before copying (ms)");
             ui.add(egui::DragValue::new(&mut st.draft.copy_delay_ms).range(0..=5000).speed(5.0));
@@ -248,7 +248,7 @@ fn clipboard_card(ui: &mut egui::Ui, st: &mut SetupState, p: &Pal) {
 
 fn chat_card(ui: &mut egui::Ui, ctx: &egui::Context, st: &mut SetupState, p: &Pal) {
     card(ui, p, "CHAT READING", |ui| {
-        ui.checkbox(&mut st.draft.chat_detection, "Register \"Champion used Spell\" lines from the game chat automatically");
+        theme::check(ui, &mut st.draft.chat_detection, "Register \"Champion used Spell\" lines from the game chat automatically");
         hint(ui, p, "Captures the chat area of the game window about once a second and reads it with the OCR built into Windows. Picks up the line League posts when someone clicks an enemy's summoner spell. Needs Borderless or Windowed mode and chat timestamps on.");
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -308,15 +308,15 @@ fn appearance_card(ui: &mut egui::Ui, ctx: &egui::Context, app: &mut App, st: &m
                 }
             }
         });
-        ui.checkbox(&mut st.draft.always_on_top, "Keep the overlay on top of other windows");
-        ui.checkbox(&mut st.draft.show_preview, "Show the chat message preview in the overlay");
-        ui.checkbox(&mut st.draft.compact, "Compact mode: lane and spell icons only (toggle from the overlay or tray too)");
-        ui.checkbox(&mut st.draft.auto_compact, "Switch to compact mode during a game, full view in the lobby");
-        ui.checkbox(&mut st.draft.hide_outside_game, "Hide the overlay when no game is running (tray icon still shows it)");
-        ui.checkbox(&mut st.draft.click_through_in_game, "Clicks go through the overlay while League is in front (use hotkeys, or alt-tab to edit)");
-        ui.checkbox(&mut st.draft.flash_alert, "Pulse an enemy's Flash when it comes back up");
-        ui.add_enabled(st.draft.flash_alert, egui::Checkbox::new(&mut st.draft.flash_alert_sound, "Also play the Windows notification sound"));
-        ui.checkbox(&mut st.draft.check_updates, "Check for a new version when Flashless starts");
+        theme::check(ui, &mut st.draft.always_on_top, "Keep the overlay on top of other windows");
+        theme::check(ui, &mut st.draft.show_preview, "Show the chat message preview in the overlay");
+        theme::check(ui, &mut st.draft.compact, "Compact mode: lane and spell icons only (toggle from the overlay or tray too)");
+        theme::check(ui, &mut st.draft.auto_compact, "Switch to compact mode during a game, full view in the lobby");
+        theme::check(ui, &mut st.draft.hide_outside_game, "Hide the overlay when no game is running (tray icon still shows it)");
+        theme::check(ui, &mut st.draft.click_through_in_game, "Clicks go through the overlay while League is in front (use hotkeys, or alt-tab to edit)");
+        theme::check(ui, &mut st.draft.flash_alert, "Pulse an enemy's Flash when it comes back up");
+        ui.add_enabled_ui(st.draft.flash_alert, |ui| { theme::check(ui, &mut st.draft.flash_alert_sound, "Also play the Windows notification sound"); });
+        theme::check(ui, &mut st.draft.check_updates, "Check for a new version when Flashless starts");
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label("Overlay opacity");

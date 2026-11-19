@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.8
+
+- Lucidity boots on the overlay: a "+10" (Ionian Boots of Lucidity) or "+20" (Crimson Lucidity) badge
+  next to each enemy, read from the live game's item data. Boots bought or sold are written to
+  chat.log, so they can be checked against the scoreboard.
+- Top lane role quest Teleport: a top laner who did not take Teleport gets a third tile for the
+  Unleashed Teleport the quest grants (420 s base cooldown, summoner haste applies). Works with chat
+  pings, the chat message ("tp"), compact mode and a new "Top Teleport" hotkey.
+- The level line under each name is gone (level still feeds Unleashed Teleport; set it by clicking a name).
+- Checkboxes are round, with a filled dot when on.
+
 ## 1.0.7
 
 - Cosmic Insight is detected automatically: when an enemy with the Inspiration tree uses a summoner

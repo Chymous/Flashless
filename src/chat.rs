@@ -95,7 +95,7 @@ fn match_ability(text: &str, e: &Enemy, data: &GameData) -> Option<Slot> {
     if w.is_empty() { return None; }
     let cands: Vec<String> = (1..=w.len()).map(|n| w[..n].concat()).collect();
     let mut options: Vec<(Slot, Vec<String>)> = Vec::new();
-    for slot in [Slot::Spell1, Slot::Spell2] {
+    for slot in [Slot::Spell1, Slot::Spell2, Slot::Quest] {
         if let Some(sp) = data.find_spell(e.spell_id(slot)) { options.push((slot, vec![letters(&sp.name)])); }
     }
     pick_closest(&options, &cands, true)

@@ -7,10 +7,10 @@ use std::sync::mpsc::{channel, Receiver};
 
 /// Shown instead of the feature list when an older version is installed.
 const WHATS_NEW: &[&str] = &[
-    "Detects Cosmic Insight by itself when an enemy's spell comes back early",
-    "Boots bought while a spell is cooling down now shorten its timer, like in game",
-    "Updates itself from the overlay; version shown in the header (from 1.0.4)",
-    "Catches more Flashes, and an enemy's Flash tile pulses when it comes back up (from 1.0.3)",
+    "Lucidity boots badge (+10 / +20) next to each enemy",
+    "Tracks the top lane role quest Teleport as a third spell",
+    "Cleaner rows (no level line) and round checkboxes",
+    "Detects Cosmic Insight by itself; boots bought mid-cooldown shorten timers (from 1.0.7)",
 ];
 
 pub struct Installer {
@@ -142,9 +142,9 @@ impl eframe::App for Installer {
                 ui.label(RichText::new("Installed for your Windows account only. No administrator rights needed.").size(11.5).color(p.muted));
                 ui.add_space(8.0);
                 let editable = self.busy.is_none() && !self.done;
-                ui.add_enabled(editable, egui::Checkbox::new(&mut self.start_menu, "Create a Start menu shortcut (find Flashless in Windows search)"));
-                ui.add_enabled(editable, egui::Checkbox::new(&mut self.desktop, "Create a desktop shortcut"));
-                ui.add_enabled(self.busy.is_none() && !self.done, egui::Checkbox::new(&mut self.launch, "Start Flashless when setup finishes"));
+                ui.add_enabled_ui(editable, |ui| { super::theme::check(ui, &mut self.start_menu, "Create a Start menu shortcut (find Flashless in Windows search)"); });
+                ui.add_enabled_ui(editable, |ui| { super::theme::check(ui, &mut self.desktop, "Create a desktop shortcut"); });
+                ui.add_enabled_ui(self.busy.is_none() && !self.done, |ui| { super::theme::check(ui, &mut self.launch, "Start Flashless when setup finishes"); });
                 ui.add_space(8.0);
                 ui.add(egui::Label::new(RichText::new(crate::RIOT_NOTICE).size(10.0).color(p.muted)).wrap());
             });

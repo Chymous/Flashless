@@ -10,9 +10,9 @@ use std::time::Instant;
 pub enum Slot {
     Spell1,
     Spell2,
+    /// Top lane role quest Teleport (a third summoner spell for top laners who did not take Teleport).
+    Quest,
 }
-
-pub const SLOTS: [Slot; 2] = [Slot::Spell1, Slot::Spell2];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ActiveCooldown {
@@ -48,10 +48,17 @@ pub struct Enemy {
 }
 
 impl Enemy {
+    /// Top laners without Teleport get one from their role quest (2026): a third spell to track.
+    pub fn has_quest_teleport(&self) -> bool {
+        let tp = |id: &Option<String>| id.as_deref().is_some_and(|x| x.to_lowercase().contains("teleport"));
+        self.role.as_deref() == Some("Top") && !tp(&self.spell1_id) && !tp(&self.spell2_id)
+    }
+
     pub fn spell_id(&self, slot: Slot) -> Option<&str> {
         match slot {
             Slot::Spell1 => self.spell1_id.as_deref(),
             Slot::Spell2 => self.spell2_id.as_deref(),
+            Slot::Quest => self.has_quest_teleport().then_some("SummonerTeleport"),
         }
     }
 }
@@ -113,7 +120,16 @@ impl Tracker {
     pub fn preview(&self, i: usize, slot: Slot, ctx: GameContext, data: &GameData, rules: &CooldownRules) -> Option<Breakdown> {
         let e = self.enemies.get(i)?;
         let spell = data.find_spell(e.spell_id(slot))?;
-        (spell.cooldown > 0.0).then(|| cooldown::for_summoner(spell, e, ctx, data, rules))
+        if spell.cooldown <= 0.0 { return None; }
+        let mut b = cooldown::for_summoner(spell, e, ctx, data, rules);
+        if slot == Slot::Quest {
+            // the quest's Unleashed Teleport has its own fixed base cooldown; haste still applies
+            b.ability_name = "Teleport (quest)".into();
+            b.base = rules.quest_teleport_cooldown;
+            b.cooldown = cooldown::apply_haste(b.base, b.haste);
+            b.detail = if b.detail.is_empty() { "top lane role quest".into() } else { format!("top lane role quest, {}", b.detail) };
+        }
+        Some(b)
     }
 
     /// Records that the ability was used `seconds_ago` seconds before `now`. If it was used again before
@@ -469,5 +485,25 @@ mod tests {
         // the next Flash gets the boots from the start
         t.register(0, Slot::Spell1, 0.0, 400.0, true, &d, &r);
         assert!((t.remaining(0, Slot::Spell1, 400.0) - 272.73).abs() < 0.05);
+    }
+
+    #[test]
+    fn top_laners_without_teleport_get_a_quest_teleport() {
+        let d = GameData::embedded();
+        let r = CooldownRules::default();
+        let mut garen = test_enemy("Garen", 9, &[]);
+        garen.role = Some("Top".into());
+        garen.spell2_id = Some("SummonerDot".into());
+        let mut shen = test_enemy("Shen", 9, &[]);
+        shen.role = Some("Top".into());
+        shen.spell2_id = Some("SummonerTeleport".into());
+        let mut mid = test_enemy("Ahri", 9, &[]);
+        mid.role = Some("Mid".into());
+        assert!(garen.has_quest_teleport() && !shen.has_quest_teleport() && !mid.has_quest_teleport());
+        let mut t = Tracker::default();
+        t.set_roster(vec![garen, shen]);
+        assert!(t.register(0, Slot::Quest, 0.0, 900.0, true, &d, &r));
+        assert!((t.remaining(0, Slot::Quest, 900.0) - (420.0 + r.teleport_start_delay)).abs() < 0.01);
+        assert!(!t.register(1, Slot::Quest, 0.0, 900.0, true, &d, &r));
     }
 }

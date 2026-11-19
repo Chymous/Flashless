@@ -9,7 +9,7 @@ use crate::data::GameData;
 use crate::live::{self, LiveSnapshot};
 use crate::message::{self, TimeFormat};
 use crate::settings::{data_dir, Settings};
-use crate::tracker::{Enemy, GameClock, Slot, Tracker, SLOTS};
+use crate::tracker::{Enemy, GameClock, Slot, Tracker};
 use crate::win::{self, clipboard, hotkeys, typing, watcher};
 use eframe::egui::{self, Align2, Color32, Rect, Rounding, Sense, Stroke, Vec2};
 use std::collections::{HashMap, HashSet};
@@ -24,6 +24,8 @@ const TILE_GAP: f32 = 4.0;
 const MINI_ICON: f32 = 30.0;
 const MINI_GAP: f32 = 4.0;
 const MINI_ROLE_W: f32 = 34.0;
+/// Width of the quest Teleport tile in full view (icon with the time on it).
+const QUEST_W: f32 = 42.0;
 
 pub struct App {
     pub settings: Settings,
@@ -237,23 +239,32 @@ impl App {
         let d = &self.data;
         let mut roster = vec![
             mk("Lucian", "SummonerBarrier", 11, &[3158], "ADC", d), mk("Nautilus", "SummonerDot", 9, &[], "Sup", d),
-            mk("Syndra", "SummonerTeleport", 12, &[], "Mid", d), mk("LeeSin", "SummonerSmite", 10, &[], "Jg", d), mk("Shen", "SummonerTeleport", 11, &[], "Top", d),
+            mk("Syndra", "SummonerTeleport", 12, &[], "Mid", d), mk("LeeSin", "SummonerSmite", 10, &[], "Jg", d), mk("Shen", "SummonerDot", 11, &[3171], "Top", d),
         ];
         roster[2].has_inspiration = true;
         self.tracker.set_roster(roster);
         let now = self.clock.now();
         let (data, rules) = (self.data.clone(), self.rules().clone());
-        for (i, slot, ago) in [(0, Slot::Spell1, 0.0), (0, Slot::Spell2, 40.0), (1, Slot::Spell1, 120.0), (4, Slot::Spell2, 200.0)] {
+        for (i, slot, ago) in [(0, Slot::Spell1, 0.0), (0, Slot::Spell2, 40.0), (1, Slot::Spell1, 120.0), (4, Slot::Spell2, 200.0), (4, Slot::Quest, 90.0)] {
             self.tracker.register(i, slot, ago, now, false, &data, &rules);
         }
     }
 
     /// Left and right tile for enemy `i`, per the spell order setting.
-    fn display_slots(&self, i: usize) -> [Slot; 2] {
+    fn display_slots(&self, i: usize) -> Vec<Slot> {
         let e = &self.tracker.enemies[i];
         let is_flash = |slot| self.data.find_spell(e.spell_id(slot)).is_some_and(|s| s.name == "Flash");
-        self.settings.spell_order.slots(is_flash(Slot::Spell1), is_flash(Slot::Spell2))
+        let mut v = self.settings.spell_order.slots(is_flash(Slot::Spell1), is_flash(Slot::Spell2)).to_vec();
+        if e.has_quest_teleport() { v.push(Slot::Quest); }
+        v
     }
+
+    /// Someone has a quest Teleport: the overlay gets a third (icon) column.
+    fn quest_column(&self) -> bool { self.tracker.enemies.iter().any(|e| e.has_quest_teleport()) }
+
+    fn card_w(&self) -> f32 { CARD_W + if self.quest_column() { QUEST_W + TILE_GAP } else { 0.0 } }
+
+    fn mini_w(&self) -> f32 { mini_width() + if self.quest_column() { MINI_ICON + MINI_GAP } else { 0.0 } }
 
     pub fn message(&self) -> String {
         message::build(&self.tracker.enemies, &self.data, self.clock.now(), self.clock.is_live || self.clock.seen_live, &self.settings.message)
@@ -304,6 +315,10 @@ impl App {
             }
             "ToggleOverlay" => {
                 if self.auto_hidden() { self.force_show = true; self.hidden = false; } else { self.hidden = !self.hidden; }
+            }
+            "TopTeleport" => {
+                if let Some(i) = self.tracker.enemies.iter().position(|e| e.has_quest_teleport()) { self.register(i, Slot::Quest); }
+                else { self.flash("no top laner with a quest Teleport"); }
             }
             a if a.starts_with("Enemy") && a.len() > 6 => {
                 let Some(i) = a[5..6].parse::<usize>().ok().and_then(|n| n.checked_sub(1)) else { return };
@@ -444,6 +459,7 @@ impl App {
                     self.clock.sync_live(s.game_time);
                     if !s.me.is_empty() { self.me = s.me.clone(); }
                     let before: Vec<String> = self.tracker.enemies.iter().map(|e| e.champion_id.clone()).collect();
+                    let boots_before: Vec<(String, i32)> = self.tracker.enemies.iter().map(|e| (e.champion_id.clone(), boots_haste(e, &self.data).0)).collect();
                     if self.tracker.apply_live(&s, &self.data, &self.settings.rules) {
                         self.filter.reset();
                         if !self.tracker.enemies.iter().any(|e| before.contains(&e.champion_id)) {
@@ -454,6 +470,13 @@ impl App {
                         let names: Vec<&str> = self.tracker.enemies.iter().map(|e| e.champion_id.as_str()).collect();
                         self.chat_log(&format!("ROSTER {}", names.join(", ")));
                     }
+                    // boots bought or sold: log it, so the live item data can be checked against the scoreboard
+                    let changes: Vec<String> = self.tracker.enemies.iter().filter_map(|e| {
+                        let was = boots_before.iter().find(|(c, _)| *c == e.champion_id).map(|b| b.1)?;
+                        let (now_h, names) = boots_haste(e, &self.data);
+                        (now_h != was).then(|| if now_h > 0 { format!("ITEMS {}: {names} (+{now_h} summoner haste)", e.name) } else { format!("ITEMS {}: no Lucidity boots", e.name) })
+                    }).collect();
+                    for c in changes { self.chat_log(&c); }
                 }
                 None => if self.clock.is_live { self.clock.go_offline(); },
             }
@@ -561,7 +584,7 @@ impl eframe::App for App {
             if self.is_hidden() { return; }
             ui.set_opacity(self.settings.opacity.clamp(0.3, 1.0));
             let compact = self.settings.compact;
-            let card_w = if compact { mini_width() } else { CARD_W };
+            let card_w = if compact { self.mini_w() } else { self.card_w() };
             let card = egui::Frame::none().fill(p.surface).stroke(Stroke::new(1.0_f32, p.line_strong)).rounding(Rounding::same(if compact { 10.0 } else { 12.0 }))
                 .shadow(egui::epaint::Shadow { offset: egui::vec2(0.0, 3.0), blur: 16.0, spread: 0.0, color: p.shadow });
             let resp = card.show(ui, |ui| {
@@ -576,7 +599,7 @@ impl eframe::App for App {
                     return;
                 }
                 self.header(ui, ctx);
-                let (r, _) = ui.allocate_exact_size(egui::vec2(CARD_W, 1.0), Sense::hover());
+                let (r, _) = ui.allocate_exact_size(egui::vec2(card_w, 1.0), Sense::hover());
                 ui.painter().rect_filled(r, 0.0_f32, p.line);
                 egui::Frame::none().inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 10.0, bottom: 12.0 }).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(0.0, 6.0);
@@ -610,7 +633,7 @@ impl eframe::App for App {
 impl App {
     fn header(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let p = self.pal;
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(CARD_W, 42.0), Sense::click_and_drag());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(self.card_w(), 42.0), Sense::click_and_drag());
         if resp.drag_started() { ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag); }
         let painter = ui.painter_at(rect);
         let cy = rect.center().y;
@@ -649,31 +672,43 @@ impl App {
         let p = self.pal;
         let now = self.clock.now();
         let gctx = self.tracker.context(now, self.clock.is_live);
-        let name_w = CARD_W - 24.0 - 2.0 * (TILE.x + TILE_GAP);
+        let quest_col = if self.quest_column() { QUEST_W + TILE_GAP } else { 0.0 };
+        let row_w = self.card_w() - 24.0;
+        let name_w = row_w - 2.0 * (TILE.x + TILE_GAP) - quest_col;
         for i in 0..self.tracker.enemies.len() {
-            let row = ui.allocate_exact_size(egui::vec2(CARD_W - 24.0, TILE.y), Sense::hover()).0;
+            let row = ui.allocate_exact_size(egui::vec2(row_w, TILE.y), Sense::hover()).0;
             // name block (click to tune)
             let name_rect = Rect::from_min_size(row.min, egui::vec2(name_w, TILE.y));
-            let nresp = ui.interact(name_rect, ui.id().with(("name", i)), Sense::click()).on_hover_text("Click to set level and Cosmic Insight for this enemy");
+            let (boots, boots_names) = boots_haste(&self.tracker.enemies[i], &self.data);
+            let tip = if boots > 0 { format!("{boots_names}: +{boots} summoner spell haste\nClick to set Cosmic Insight and level") } else { "Click to set Cosmic Insight and level".to_string() };
+            let nresp = ui.interact(name_rect, ui.id().with(("name", i)), Sense::click()).on_hover_text(tip);
             if nresp.clicked() { self.expanded = if self.expanded == Some(i) { None } else { Some(i) }; }
             let e = &self.tracker.enemies[i];
-            let painter = ui.painter();
+            let painter = ui.painter_at(name_rect);
             let c = egui::pos2(name_rect.left() + 9.0, name_rect.center().y);
             painter.circle_filled(c, 9.0, p.accent_soft);
             painter.text(c, Align2::CENTER_CENTER, format!("{}", i + 1), theme::semi(10.0), p.accent_deep);
             let nx = name_rect.left() + 26.0;
             painter.text(egui::pos2(nx, name_rect.center().y - 7.0), Align2::LEFT_CENTER, &e.name, theme::semi(13.0), p.text);
-            let lv = painter.text(egui::pos2(nx, name_rect.center().y + 9.0), Align2::LEFT_CENTER, format!("Lv {}", e.level), theme::regular(10.0), p.muted);
-            let mut x = lv.right();
-            if let Some(role) = &e.role {
-                x = painter.text(egui::pos2(x, lv.center().y), Align2::LEFT_CENTER, format!("  ·  {role}"), theme::semi(10.0), p.accent_deep).right();
-            }
-            if e.has_inspiration && !e.cosmic_insight && !e.runes_known {
-                painter.text(egui::pos2(x, lv.center().y), Align2::LEFT_CENTER, "  CI?", theme::semi(10.0), p.cooling);
+            // second line: lane, boots haste, Cosmic Insight hint
+            let mut bits: Vec<(String, Color32)> = Vec::new();
+            if let Some(role) = &e.role { bits.push((role.clone(), p.accent_deep)); }
+            if boots > 0 { bits.push((format!("+{boots}"), p.ready)); }
+            if e.has_inspiration && !e.cosmic_insight && !e.runes_known { bits.push(("CI?".into(), p.cooling)); }
+            if e.cosmic_insight { bits.push(("CI".into(), p.ready)); }
+            let mut x = nx;
+            for (k, (t, col)) in bits.iter().enumerate() {
+                if k > 0 { x = painter.text(egui::pos2(x, name_rect.center().y + 9.0), Align2::LEFT_CENTER, "  ·  ", theme::regular(10.0), p.muted).right(); }
+                x = painter.text(egui::pos2(x, name_rect.center().y + 9.0), Align2::LEFT_CENTER, t, theme::semi(10.0), *col).right();
             }
             for (k, slot) in self.display_slots(i).iter().enumerate() {
-                let r = Rect::from_min_size(egui::pos2(row.right() - (2 - k) as f32 * (TILE.x + TILE_GAP) + TILE_GAP, row.top()), TILE);
-                self.tile(ui, i, *slot, r, now, gctx, false);
+                if *slot == Slot::Quest {
+                    let r = Rect::from_min_size(egui::pos2(row.right() - 2.0 * (TILE.x + TILE_GAP) - QUEST_W, row.top()), egui::vec2(QUEST_W, TILE.y));
+                    self.tile(ui, i, *slot, r, now, gctx, true);
+                } else {
+                    let r = Rect::from_min_size(egui::pos2(row.right() - (2 - k) as f32 * (TILE.x + TILE_GAP) + TILE_GAP, row.top()), TILE);
+                    self.tile(ui, i, *slot, r, now, gctx, false);
+                }
             }
             if self.expanded == Some(i) { self.tune(ui, i); }
         }
@@ -689,7 +724,7 @@ impl App {
             return;
         }
         for i in 0..self.tracker.enemies.len() {
-            let row = ui.allocate_exact_size(egui::vec2(mini_width() - 16.0, MINI_ICON), Sense::hover()).0;
+            let row = ui.allocate_exact_size(egui::vec2(self.mini_w() - 16.0, MINI_ICON), Sense::hover()).0;
             let e = &self.tracker.enemies[i];
             let label = e.role.clone().unwrap_or_else(|| e.name.chars().take(4).collect());
             ui.painter().text(egui::pos2(row.left() + 2.0, row.center().y), Align2::LEFT_CENTER, label, theme::semi(11.5), p.accent_deep);
@@ -801,7 +836,7 @@ impl App {
         let p = self.pal;
         let now = self.clock.now();
         egui::Frame::none().fill(p.inset).stroke(Stroke::new(1.0_f32, p.line)).rounding(7.0_f32).inner_margin(egui::Margin::symmetric(10.0, 7.0)).show(ui, |ui| {
-            ui.set_width(CARD_W - 44.0);
+            ui.set_width(self.card_w() - 44.0);
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
             let mut changed = false;
             ui.horizontal(|ui| {
@@ -811,12 +846,12 @@ impl App {
                 ui.label(egui::RichText::new(format!("{}", e.level)).font(theme::semi(11.5)));
                 if small_btn(ui, "+") { e.level = (e.level + 1).min(18); changed = true; }
                 ui.add_space(10.0);
-                changed |= ui.checkbox(&mut e.cosmic_insight, egui::RichText::new("Cosmic Insight").size(11.0)).on_hover_text("+18 summoner spell haste (rune)").changed();
+                changed |= theme::check(ui, &mut e.cosmic_insight, egui::RichText::new("Cosmic Insight").size(11.0)).on_hover_text("+18 summoner spell haste (rune)").changed();
             });
             let (data, rules) = (self.data.clone(), self.settings.rules.clone());
             if changed { self.tracker.recalculate(i, now, self.clock.is_live, &data, &rules); }
             let gctx = self.tracker.context(now, self.clock.is_live);
-            let parts: Vec<String> = SLOTS.iter().filter_map(|s| self.tracker.preview(i, *s, gctx, &data, &rules)).map(|b| format!("{} {:.0}s", b.ability_name, b.cooldown)).collect();
+            let parts: Vec<String> = self.display_slots(i).iter().filter_map(|s| self.tracker.preview(i, *s, gctx, &data, &rules)).map(|b| format!("{} {:.0}s", b.ability_name, b.cooldown)).collect();
             ui.label(egui::RichText::new(parts.join("  ·  ")).color(p.muted).size(10.5));
         });
     }
@@ -827,7 +862,7 @@ impl App {
         ui.add_space(4.0);
         let resp = egui::Frame::none().fill(p.inset).stroke(Stroke::new(1.0_f32, p.line)).rounding(8.0_f32)
             .inner_margin(egui::Margin { left: 13.0, right: 10.0, top: 6.0, bottom: 7.0 }).show(ui, |ui| {
-                ui.set_width(CARD_W - 24.0 - 23.0);
+                ui.set_width(self.card_w() - 24.0 - 23.0);
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 2.0);
                 ui.label(egui::RichText::new("CHAT MESSAGE").font(theme::semi(9.5)).color(p.accent_deep));
                 let text = if msg.is_empty() { "No cooldowns tracked".to_string() } else { msg };
@@ -846,12 +881,12 @@ impl App {
                 .fill(p.accent).stroke(Stroke::NONE).rounding(6.0_f32).min_size(egui::vec2(72.0, 26.0));
             if ui.add(copy).on_hover_text("Copy the message to the clipboard").clicked() { self.copy_now(); }
             let mut auto = self.settings.auto_copy;
-            if ui.checkbox(&mut auto, egui::RichText::new("Auto-copy").size(11.5)).on_hover_text("Copy the message whenever a cooldown is registered").changed() {
+            if theme::check(ui, &mut auto, egui::RichText::new("Auto-copy").size(11.5)).on_hover_text("Copy the message whenever a cooldown is registered").changed() {
                 self.settings.auto_copy = auto;
                 self.settings.save();
             }
             let mut clock = self.settings.message.format == TimeFormat::GameClock;
-            if ui.checkbox(&mut clock, egui::RichText::new("Clock").size(11.5)).on_hover_text("On: game time the ability is back up (2230 = 22:30). Off: seconds remaining.").changed() {
+            if theme::check(ui, &mut clock, egui::RichText::new("Clock").size(11.5)).on_hover_text("On: game time the ability is back up (2230 = 22:30). Off: seconds remaining.").changed() {
                 self.settings.message.format = if clock { TimeFormat::GameClock } else { TimeFormat::SecondsRemaining };
                 self.settings.save();
             }
@@ -871,4 +906,10 @@ fn mini_width() -> f32 { 8.0 + MINI_ROLE_W + 2.0 * MINI_ICON + MINI_GAP + 8.0 + 
 
 fn small_btn(ui: &mut egui::Ui, t: &str) -> bool {
     ui.add(egui::Button::new(egui::RichText::new(t).size(12.0)).min_size(egui::vec2(22.0, 20.0)).rounding(5.0_f32)).clicked()
+}
+
+/// Summoner haste from an enemy's items (Ionian Boots of Lucidity +10, Crimson Lucidity +20) and their names.
+fn boots_haste(e: &Enemy, data: &GameData) -> (i32, String) {
+    let items: Vec<&crate::data::ItemInfo> = e.item_ids.iter().filter_map(|&id| data.find_item(id)).filter(|it| it.summoner_haste > 0).collect();
+    (items.iter().map(|it| it.summoner_haste).sum(), items.iter().map(|it| it.name.as_str()).collect::<Vec<_>>().join(", "))
 }

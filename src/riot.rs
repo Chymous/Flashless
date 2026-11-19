@@ -31,9 +31,17 @@ pub fn has_key() -> bool { key_path().exists() }
 pub fn save_key(key: &str) -> Result<(), String> {
     let key = key.trim();
     if key.is_empty() { return Err("empty key".into()); }
+    // Catches half-copied keys and stray characters before they turn into a 403 mid-game.
+    if !looks_like_key(key) {
+        return Err("that doesn't look like a Riot key (it starts with RGAPI-)".into());
+    }
     let blob = crate::win::dpapi::protect(key.as_bytes()).ok_or("Windows could not encrypt the key")?;
     std::fs::create_dir_all(crate::settings::data_dir()).map_err(|e| e.to_string())?;
     std::fs::write(key_path(), blob).map_err(|e| e.to_string())
+}
+
+fn looks_like_key(k: &str) -> bool {
+    k.len() > 6 && k.starts_with("RGAPI-") && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
 pub fn remove_key() { let _ = std::fs::remove_file(key_path()); }
@@ -48,14 +56,26 @@ fn agent() -> Option<ureq::Agent> {
     Some(ureq::AgentBuilder::new().tls_connector(std::sync::Arc::new(tls)).timeout(Duration::from_secs(8)).user_agent("Flashless").build())
 }
 
-fn get(agent: &ureq::Agent, url: &str, key: &str) -> Result<serde_json::Value, String> {
+/// `what` names the call ("Account-V1", "Spectator-V5") so a failure says which step broke.
+fn get(agent: &ureq::Agent, url: &str, key: &str, what: &str) -> Result<serde_json::Value, String> {
     match agent.get(url).set("X-Riot-Token", key).call() {
-        Ok(r) => serde_json::from_str(&r.into_string().map_err(|e| e.to_string())?).map_err(|e| e.to_string()),
-        Err(ureq::Error::Status(401 | 403, _)) => Err("the API key is invalid or expired (development keys last 24 h)".into()),
+        Ok(r) => serde_json::from_str(&r.into_string().map_err(|e| e.to_string())?).map_err(|e| format!("{what}: {e}")),
         Err(ureq::Error::Status(404, _)) => Err("not found".into()),
-        Err(ureq::Error::Status(429, _)) => Err("rate limited, try again in a minute".into()),
-        Err(ureq::Error::Status(c, _)) => Err(format!("Riot API error {c}")),
-        Err(e) => Err(format!("no connection to the Riot API ({e})")),
+        Err(ureq::Error::Status(c, r)) => {
+            // Riot's own reason, e.g. {"status":{"message":"Forbidden","status_code":403}}. It never echoes the key.
+            let msg = r.into_string().ok()
+                .and_then(|b| serde_json::from_str::<serde_json::Value>(&b).ok())
+                .and_then(|v| v["status"]["message"].as_str().map(str::to_string))
+                .unwrap_or_default();
+            let hint = match c {
+                401 => "no key was sent",
+                403 => "key rejected: expired, regenerated or mistyped (development keys last 24 h)",
+                429 => "rate limited, try again in a minute",
+                _ => "Riot API error",
+            };
+            Err(if msg.is_empty() { format!("{what} HTTP {c}: {hint}") } else { format!("{what} HTTP {c}: {hint} (Riot says \"{msg}\")") })
+        }
+        Err(e) => Err(format!("{what}: no connection to the Riot API ({e})")),
     }
 }
 
@@ -69,10 +89,10 @@ pub fn enemy_runes(region: &str, my_riot_id: &str) -> Result<Vec<RunePage>, Stri
     let (_, platform, regional) = REGIONS.iter().find(|r| r.0.eq_ignore_ascii_case(region)).copied().ok_or("unknown region")?;
     let (name, tag) = my_riot_id.rsplit_once('#').ok_or("your Riot ID is not known yet")?;
     let agent = agent().ok_or("no HTTPS support")?;
-    let acct = get(&agent, &format!("https://{regional}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{}/{}", enc(name), enc(tag)), &key)
+    let acct = get(&agent, &format!("https://{regional}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/{}/{}", enc(name), enc(tag)), &key, "Account-V1")
         .map_err(|e| if e == "not found" { "your Riot ID was not found in this region".into() } else { e })?;
     let puuid = acct["puuid"].as_str().ok_or("unexpected account reply")?;
-    let game = get(&agent, &format!("https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"), &key)
+    let game = get(&agent, &format!("https://{platform}.api.riotgames.com/lol/spectator/v5/active-games/by-summoner/{puuid}"), &key, "Spectator-V5")
         .map_err(|e| if e == "not found" { "no live game found (bot and practice games are not listed)".into() } else { e })?;
     parse_game(&game, puuid)
 }
@@ -109,5 +129,13 @@ mod tests {
         assert!(r[0].cosmic_insight && r[0].inspiration);
         assert!(!r[1].cosmic_insight && !r[1].inspiration);
         assert_eq!(enc("Foe One"), "Foe%20One");
+    }
+
+    #[test]
+    fn rejects_malformed_keys() {
+        assert!(looks_like_key("RGAPI-0a1b2c3d-0000-4e5f-9abc-0123456789ab"));
+        assert!(!looks_like_key("RGAPI-"));
+        assert!(!looks_like_key("0a1b2c3d-0000-4e5f-9abc-0123456789ab"));
+        assert!(!looks_like_key("RGAPI-0a1b\u{200b}2c3d"));
     }
 }

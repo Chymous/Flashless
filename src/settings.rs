@@ -73,6 +73,7 @@ pub fn default_hotkeys() -> BTreeMap<String, String> {
     h.insert("ResetAll".into(), "".into());
     h.insert("ToggleOverlay".into(), "Ctrl+Alt+O".into());
     h.insert("ToggleCompact".into(), "".into());
+    h.insert("TopTeleport".into(), "".into());
     for i in 1..=5 {
         h.insert(format!("Enemy{i}Flash"), format!("Ctrl+Alt+{i}"));
         h.insert(format!("Enemy{i}OtherSpell"), "".into());
