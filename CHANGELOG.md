@@ -2,74 +2,64 @@
 
 ## 1.1.0
 
-- Optional Riot API key for everyone (Settings > Riot API): with a key saved, Flashless reads each
-  enemy's rune page as soon as a game loads, so Cosmic Insight is known instead of guessed. It retries
-  for a few minutes while the game isn't listed yet. The key is stored encrypted for your Windows
-  account and only sent to Riot. Without a key, nothing changes.
-- One build again: the separate personal build is gone. Copies on 1.0.x-p should install 1.1.0 once by
-  hand; updates are automatic after that.
+- New optional Riot API key setting (Settings > Riot API). With a key, Flashless reads each enemy's rune
+  page when a game loads, so Cosmic Insight is known instead of guessed. The key is stored encrypted with
+  Windows DPAPI and only sent to Riot's API.
+- Without a key, Cosmic Insight is still detected from early repeat pings, as before.
 
 ## 1.0.9
 
-- The top lane quest Teleport tile is a full tile like the others: time left and the game time it is back
-  up (e.g. 4:21 and @22:30), instead of a small icon with seconds.
+- The top lane quest Teleport tile now shows time left and the game time it comes back up (e.g. 4:21 and
+  @22:30), like the other spells.
 
 ## 1.0.8
 
-- Lucidity boots on the overlay: a "+10" (Ionian Boots of Lucidity) or "+20" (Crimson Lucidity) badge
-  next to each enemy, read from the live game's item data. Boots bought or sold are written to
-  chat.log, so they can be checked against the scoreboard.
-- Top lane role quest Teleport: a top laner who did not take Teleport gets a third tile for the
-  Unleashed Teleport the quest grants (420 s base cooldown, summoner haste applies). Works with chat
-  pings, the chat message ("tp"), compact mode and a new "Top Teleport" hotkey.
-- The level line under each name is gone (level still feeds Unleashed Teleport; set it by clicking a name).
-- Checkboxes are round, with a filled dot when on.
+- Lucidity boots badge: "+10" (Ionian Boots of Lucidity) or "+20" (Crimson Lucidity) next to each enemy,
+  read from the live game's item data.
+- Top lane role quest Teleport: a top laner without Teleport gets a third tile for the Unleashed Teleport
+  the quest grants (420 s base cooldown, summoner haste applies). Works with chat detection, the chat
+  message ("tp"), compact mode and a new Top Teleport hotkey.
+- Removed the level line under each name.
+- Round checkboxes.
 
 ## 1.0.7
 
-- Cosmic Insight is detected automatically: when an enemy with the Inspiration tree uses a summoner
-  spell again before its timer ran out, and Cosmic Insight's +18 haste explains it, Flashless marks
-  them as having it and corrects their timers (works from chat, clicks and hotkeys).
-- Boots bought while a spell is cooling down now shorten the time left, the way the game does
-  (Ionian Boots, Crimson Lucidity). Ticking Cosmic Insight by hand does the same.
-- The setup downloaded by an in-app update is deleted from the temp folder on the next start.
+- Automatic Cosmic Insight detection: when an enemy with the Inspiration tree uses a summoner spell again
+  earlier than expected, and Cosmic Insight's +18 haste explains it, Flashless marks it and corrects
+  their timers.
+- Boots bought while a spell is on cooldown now shorten the time left, the way the game does. Ticking
+  Cosmic Insight by hand does the same.
 
 ## 1.0.6
 
-- The opacity slider moved from the overlay footer to Settings > Appearance, so the footer has room for
-  the update link.
+- The opacity slider moved from the overlay footer to Settings > Appearance.
 
 ## 1.0.5
 
-- The version number is shown in the overlay header, the compact view's tooltip and the tray icon tooltip.
+- The version number is shown in the overlay header and the tray icon tooltip.
 
 ## 1.0.4
 
-- Flashless now updates itself. When a new version is out, the overlay shows "Update to x.y.z"
-  (a small icon in compact mode). Click it and Flashless downloads the new setup from this
-  repository's releases, checks it against the published SHA-256, installs it and restarts with your
-  settings and shortcuts kept. It never updates during a game. Right click the link to see what's new.
-- "Check for a new version when Flashless starts" can be turned off in Settings > Appearance.
-- Releases now carry a single Flashless-Setup.exe, which both installs and updates.
+- In-app updates: when a new version is out, the overlay shows "Update to x.y.z". One click downloads the
+  setup from this repository's releases, checks its SHA-256, installs it and restarts with settings and
+  shortcuts kept. Never runs during a game.
+- The update check can be turned off in Settings > Appearance.
+- One Flashless-Setup.exe per release that both installs and updates.
 
 ## 1.0.3
 
-- Catches more Flashes: when League's chat time can't be read cleanly, the line is timed from the moment
-  it appeared instead of being skipped. Chat history popping up when you open chat is not counted.
-- Flash-back alert: an enemy's Flash tile pulses when it comes back up, with an optional Windows sound.
-- Clicks pass through the overlay while League is in front, so a timer can't be cleared by accident
-  mid-fight. Hotkeys still work; alt-tab to click the overlay. Can be turned off.
-- New options in Settings > Appearance: compact mode during games (full view in the lobby), hide the
-  overlay when no game is running, and Flash on the left / right / in the enemy's own D-F order.
-- A tracked spell starts 7 seconds into its cooldown (time to see it and call it), so a fresh Flash
-  shows 4:53. Adjustable from 0 to 30 s; applies to clicks, hotkeys and chat detection.
-- Chat timestamps read reliably with a small chat box (`1 5:44`, `15.'44`, `I I .'56` and similar).
-- Fix: timers no longer reset mid-game when the Live Client API briefly lists every player or a
-  placeholder player (bot games).
+- Better chat detection: when the chat timestamp can't be read cleanly, the line is timed from when it
+  appeared instead of being skipped. Chat history that pops up when chat opens is ignored.
+- Flash-back alert: an enemy's Flash tile pulses when it comes back up, with an optional sound.
+- Clicks pass through the overlay while League is in front, so timers can't be cleared by accident.
+  Hotkeys still work. Can be turned off.
+- New options in Settings > Appearance: compact mode during games, hide outside games, and Flash on the
+  left, right, or in the enemy's own order.
+- Call delay: a tracked spell starts 7 seconds into its cooldown to account for the time to see and call
+  it, so a fresh Flash shows 4:53. Adjustable from 0 to 30 s.
+- Fix: timers no longer reset mid-game when the Live Client API briefly returns an odd player list.
 - Fix: the chat message keeps game-clock times if the Live Client API drops for a moment.
-- Lighter while you play: Windows hands over at most one captured frame a second, and the Live Client
-  API is polled every 5 s instead of every second.
-- `chat.log` keeps only the last three games.
+- Lower CPU use during games.
 
 ## 1.0.2
 
