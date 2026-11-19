@@ -5,6 +5,8 @@
 - New optional Riot API key setting (Settings > Riot API). With a key, Flashless reads each enemy's rune
   page when a game loads, so Cosmic Insight is known instead of guessed. The key is stored encrypted with
   Windows DPAPI and only sent to Riot's API.
+- Get a key at developer.riotgames.com. Development keys expire after 24 hours. Riot doesn't list bot or
+  practice games, so the lookup only works in real matches.
 - Without a key, Cosmic Insight is still detected from early repeat pings, as before.
 
 ## 1.0.9
