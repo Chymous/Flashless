@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.9
+
+- The top lane quest Teleport tile is a full tile like the others: time left and the game time it is back
+  up (e.g. 4:21 and @22:30), instead of a small icon with seconds.
+
 ## 1.0.8
 
 - Lucidity boots on the overlay: a "+10" (Ionian Boots of Lucidity) or "+20" (Crimson Lucidity) badge

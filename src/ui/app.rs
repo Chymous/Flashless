@@ -24,8 +24,8 @@ const TILE_GAP: f32 = 4.0;
 const MINI_ICON: f32 = 30.0;
 const MINI_GAP: f32 = 4.0;
 const MINI_ROLE_W: f32 = 34.0;
-/// Width of the quest Teleport tile in full view (icon with the time on it).
-const QUEST_W: f32 = 42.0;
+/// Width of the quest Teleport tile in full view: a normal tile (time left and the time it is back).
+const QUEST_W: f32 = TILE.x;
 
 pub struct App {
     pub settings: Settings,
@@ -704,7 +704,7 @@ impl App {
             for (k, slot) in self.display_slots(i).iter().enumerate() {
                 if *slot == Slot::Quest {
                     let r = Rect::from_min_size(egui::pos2(row.right() - 2.0 * (TILE.x + TILE_GAP) - QUEST_W, row.top()), egui::vec2(QUEST_W, TILE.y));
-                    self.tile(ui, i, *slot, r, now, gctx, true);
+                    self.tile(ui, i, *slot, r, now, gctx, false);
                 } else {
                     let r = Rect::from_min_size(egui::pos2(row.right() - (2 - k) as f32 * (TILE.x + TILE_GAP) + TILE_GAP, row.top()), TILE);
                     self.tile(ui, i, *slot, r, now, gctx, false);

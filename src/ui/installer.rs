@@ -7,9 +7,9 @@ use std::sync::mpsc::{channel, Receiver};
 
 /// Shown instead of the feature list when an older version is installed.
 const WHATS_NEW: &[&str] = &[
-    "Lucidity boots badge (+10 / +20) next to each enemy",
-    "Tracks the top lane role quest Teleport as a third spell",
-    "Cleaner rows (no level line) and round checkboxes",
+    "Top lane quest Teleport shows time left and when it is back, like the other spells",
+    "Lucidity boots badge (+10 / +20) next to each enemy (from 1.0.8)",
+    "Cleaner rows (no level line) and round checkboxes (from 1.0.8)",
     "Detects Cosmic Insight by itself; boots bought mid-cooldown shorten timers (from 1.0.7)",
 ];
 
