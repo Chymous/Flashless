@@ -4,6 +4,8 @@
 
 - Viego: a spell pinged while he's possessing someone (e.g. "Morgana used Flash") now stays on his row
   when he turns back into Viego, instead of being lost. His timers and rune info follow him both ways.
+- A new version now shows as an Update button at the bottom right, styled like Copy, instead of a
+  pop-up at the top.
 
 ## 1.1.0
 

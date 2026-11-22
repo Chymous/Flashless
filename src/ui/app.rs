@@ -214,7 +214,6 @@ impl App {
         let c = ctx.clone();
         std::thread::spawn(move || { let _ = tx.send(crate::update::download(&r)); c.request_repaint(); });
         self.updating = Some(rx);
-        self.flash(format!("downloading {}...", self.update.as_ref().map(|u| u.version.clone()).unwrap_or_default()));
     }
 
     /// Hidden by the "hide outside game" option right now.
@@ -489,7 +488,8 @@ impl App {
         if let Ok(s) = self.status_rx.try_recv() { self.flash(s); }
 
         self.pump_riot(ctx);
-        if let Ok(r) = self.update_rx.try_recv() { self.flash(format!("Flashless {} is available", r.version)); self.update = Some(r); }
+        // shown as the Update button in the footer, not as a pop-up at the top
+        if let Ok(r) = self.update_rx.try_recv() { self.update = Some(r); }
         if let Some(rx) = &self.updating {
             if let Ok(res) = rx.try_recv() {
                 self.updating = None;
@@ -885,11 +885,15 @@ impl App {
             }
             if let Some(r) = &self.update {
                 let (v, page) = (r.version.clone(), r.page.clone());
-                let label = if self.updating.is_some() { "Updating...".to_string() } else { format!("Update to {v}") };
-                let link = ui.link(egui::RichText::new(label).size(11.5).color(p.accent_deep))
-                    .on_hover_text("Download and install it now (Flashless restarts, settings are kept).\nRight click: see what's new");
-                if link.clicked() { let ctx = ui.ctx().clone(); self.start_update(&ctx); }
-                if link.secondary_clicked() { win::open_url(&page); }
+                let label = if self.updating.is_some() { "Updating...".to_string() } else { format!("Update {v}") };
+                // same look as Copy, pinned to the right
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let btn = egui::Button::new(egui::RichText::new(label).font(theme::semi(12.0)).color(p.accent_text))
+                        .fill(p.accent).stroke(Stroke::NONE).rounding(6.0_f32).min_size(egui::vec2(72.0, 26.0));
+                    let b = ui.add(btn).on_hover_text("Download and install it now (Flashless restarts, settings are kept).\nRight click: see what's new");
+                    if b.clicked() { let ctx = ui.ctx().clone(); self.start_update(&ctx); }
+                    if b.secondary_clicked() { win::open_url(&page); }
+                });
             }
         });
     }
