@@ -1,6 +1,6 @@
 [package]
 name = "flashless"
-version = "1.1.0"
+version = "1.1.1"
 edition = "2021"
 description = "Flashless - League of Legends companion app"
 build = "build.rs"
