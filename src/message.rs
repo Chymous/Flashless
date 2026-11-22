@@ -134,4 +134,34 @@ mod tests {
         assert_eq!(secs, "Varus 54f 60b | Lulu 117f 10h | Galio 291f | Rumble 10ig");
         assert_eq!(format_time(142.0, 100.0, false, TimeFormat::GameClock), "42");
     }
+
+    #[test]
+    fn message_holds_summoner_spells_only() {
+        // every slot that can be tracked, all on cooldown: the line may only name summoner spells
+        let d = GameData::embedded();
+        let r = CooldownRules::default();
+        let mut t = Tracker::default();
+        let mut shen = test_enemy("Shen", 11, &[]);
+        shen.spell2_id = Some("SummonerDot".into());
+        shen.role = Some("Top".into());
+        let mut lucian = test_enemy("Lucian", 11, &[]);
+        lucian.spell2_id = Some("SummonerBarrier".into());
+        t.set_roster(vec![shen, lucian]);
+        let now = 600.0;
+        for i in 0..t.enemies.len() {
+            for slot in [Slot::Spell1, Slot::Spell2, Slot::Quest] { t.register(i, slot, 5.0, now, true, &d, &r); }
+        }
+        let opt = MessageOptions::default();
+        let allowed: Vec<&str> = opt.abbreviations.values().map(String::as_str).collect();
+        let msg = build(&t.enemies, &d, now, true, &opt);
+        assert!(!msg.is_empty());
+        for block in msg.split(" | ") {
+            for part in block.split(' ').skip(1) {
+                let abbr = part.trim_start_matches(|c: char| c.is_ascii_digit());
+                assert!(allowed.contains(&abbr), "{abbr} in {msg}");
+            }
+        }
+        let lower = msg.to_lowercase();
+        assert!(!lower.contains("ult") && !lower.contains("r "), "{msg}");
+    }
 }

@@ -50,6 +50,8 @@ pub struct Settings {
     pub flash_alert_sound: bool,
     /// Ask GitHub for a newer release on start.
     pub check_updates: bool,
+    /// Champion portrait beside each enemy (full and compact view). Off collapses the space.
+    pub show_portraits: bool,
     /// Riot API region for the optional rune lookup.
     pub riot_region: String,
     /// Which summoner spell sits in the left tile.
@@ -105,6 +107,7 @@ impl Default for Settings {
             flash_alert: true,
             flash_alert_sound: false,
             check_updates: true,
+            show_portraits: true,
             riot_region: "NA".into(),
             spell_order: SpellOrder::FlashLeft,
             left: None,
@@ -159,5 +162,30 @@ impl SpellOrder {
             SpellOrder::Game => false,
         };
         if swap { [Spell2, Spell1] } else { [Spell1, Spell2] }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn portraits_default_on_and_old_files_load() {
+        assert!(Settings::default().show_portraits);
+        // a settings file from before the option existed
+        let old: Settings = serde_json::from_str(r#"{"AutoCopy":false,"Theme":"Dark"}"#).unwrap();
+        assert!(old.show_portraits);
+        assert!(!old.auto_copy);
+        assert_eq!(old.theme, "Dark");
+    }
+
+    #[test]
+    fn portraits_setting_round_trips() {
+        let mut s = Settings::default();
+        s.show_portraits = false;
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"ShowPortraits\":false"));
+        let back: Settings = serde_json::from_str(&json).unwrap();
+        assert!(!back.show_portraits);
     }
 }

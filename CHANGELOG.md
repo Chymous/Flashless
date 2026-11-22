@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.0
+
+- New look for the overlay and Settings: near-black charcoal with warm gold.
+- Champion portraits beside each enemy, in full and compact view. Turn them off under Settings > Overlay >
+  Show champion portraits. The images ship with Flashless; nothing is downloaded.
+- Settings redesigned: a sidebar (Overview, Settings, Hotkeys, Roster, About), tabs, and a live preview of
+  the overlay with sample enemies. Settings now opens in front of other windows.
+- The top lane quest Teleport is now a small square tile on the top laner's row only, so the other rows
+  no longer get empty space. Hover it for the game time it comes back up.
+- Spell tiles keep showing the game time a spell is back (@22:30) after a game, not only during it.
+- Sharper Flashless icon in the overlay, Settings and the title bar.
+- The Riot API section links to developer.riotgames.com for a key.
+- The chat reading log can be turned off under Settings > General.
+
 ## 1.1.2
 
 - Viego: a spell pinged while he's possessing someone (e.g. "Morgana used Flash") now stays on his row

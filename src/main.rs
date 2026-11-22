@@ -93,10 +93,10 @@ fn main() {
     win::lower_priority();
     let s = settings::Settings::load();
     let mut vb = egui::ViewportBuilder::default().with_title("Flashless").with_decorations(false).with_transparent(true)
-        .with_resizable(false).with_taskbar(true).with_inner_size([ui::app::CARD_W + 2.0 * ui::app::MARGIN, 300.0])
+        .with_resizable(false).with_taskbar(true).with_inner_size([ui::app::card_width(s.show_portraits) + 2.0 * ui::app::MARGIN, 300.0])
         .with_icon(Arc::new(ui::theme::icon_data()));
     if s.always_on_top { vb = vb.with_always_on_top(); }
-    let (left, top) = win::clamp_to_screen(s.left.unwrap_or(40.0), s.top.unwrap_or(200.0), ui::app::CARD_W);
+    let (left, top) = win::clamp_to_screen(s.left.unwrap_or(40.0), s.top.unwrap_or(200.0), ui::app::card_width(s.show_portraits));
     vb = vb.with_position([left, top]);
     let options = eframe::NativeOptions { viewport: vb, ..Default::default() };
     let demo = has("--demo");

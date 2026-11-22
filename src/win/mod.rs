@@ -45,6 +45,42 @@ pub fn make_no_activate(h: HWND) {
     }
 }
 
+/// Puts a window above every other window and gives it focus. The overlay never takes focus, so Windows would
+/// otherwise open a new window (Settings) behind whatever app is in front.
+pub fn bring_to_front(h: HWND) {
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    unsafe {
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW;
+        let _ = SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0, flags);
+        let _ = SetWindowPos(h, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+        // borrow the foreground thread's input state so Windows allows the focus change
+        let fg = GetForegroundWindow();
+        let fg_thread = GetWindowThreadProcessId(fg, None);
+        let me = GetCurrentThreadId();
+        let attached = fg_thread != 0 && fg_thread != me && AttachThreadInput(me, fg_thread, true).as_bool();
+        let _ = BringWindowToTop(h);
+        let _ = SetForegroundWindow(h);
+        if attached { let _ = AttachThreadInput(me, fg_thread, false); }
+    }
+}
+
+/// Title bar and taskbar icons from the exe's own icon resource, at the exact sizes Windows asks for
+/// (sharper than one image scaled down).
+pub fn set_icon_from_resource(h: HWND) {
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    unsafe {
+        let Ok(module) = GetModuleHandleW(None) else { return };
+        for (which, metric_x, metric_y) in [(ICON_SMALL, SM_CXSMICON, SM_CYSMICON), (ICON_BIG, SM_CXICON, SM_CYICON)] {
+            let (cx, cy) = (GetSystemMetrics(metric_x), GetSystemMetrics(metric_y));
+            // resource 1 = assets/app.ico (see app.rc)
+            if let Ok(icon) = LoadImageW(module, PCWSTR(1 as _), IMAGE_ICON, cx, cy, LR_DEFAULTCOLOR) {
+                SendMessageW(h, WM_SETICON, WPARAM(which as usize), LPARAM(icon.0 as isize));
+            }
+        }
+    }
+}
+
 pub fn find_window(title: &str) -> Option<HWND> {
     let t: Vec<u16> = title.encode_utf16().chain([0]).collect();
     let h = unsafe { FindWindowW(None, PCWSTR(t.as_ptr())) }.ok()?;

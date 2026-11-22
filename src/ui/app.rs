@@ -17,15 +17,21 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub const CARD_W: f32 = 372.0;
 pub const MARGIN: f32 = 14.0;
-const TILE: Vec2 = Vec2::new(104.0, 42.0);
-const TILE_GAP: f32 = 4.0;
-const MINI_ICON: f32 = 30.0;
-const MINI_GAP: f32 = 4.0;
-const MINI_ROLE_W: f32 = 34.0;
-/// Width of the quest Teleport tile in full view: a normal tile (time left and the time it is back).
-const QUEST_W: f32 = TILE.x;
+pub const CARD_W: f32 = 372.0;
+pub const TILE: Vec2 = Vec2::new(104.0, 40.0);
+pub const TILE_GAP: f32 = 4.0;
+/// The quest Teleport tile in full view: a square (icon with the time on it), on the top laner's row only.
+const QUEST_W: f32 = TILE.y;
+/// Champion portrait in full view, in place of the number badge (the card grows by the difference).
+pub const PORTRAIT: f32 = 28.0;
+const BADGE_W: f32 = 26.0;
+const PORTRAIT_W: f32 = PORTRAIT + 10.0;
+/// Compact view.
+pub const MINI_ICON: f32 = 30.0;
+pub const MINI_GAP: f32 = 4.0;
+pub const MINI_ROLE_W: f32 = 32.0;
+pub const MINI_PORTRAIT: f32 = 24.0;
 
 pub struct App {
     pub settings: Settings,
@@ -236,10 +242,13 @@ impl App {
             mk("Syndra", "SummonerTeleport", 12, &[], "Mid", d), mk("LeeSin", "SummonerSmite", 10, &[], "Jg", d), mk("Shen", "SummonerDot", 11, &[3171], "Top", d),
         ];
         roster[2].has_inspiration = true;
+        crate::tracker::sort_by_role(&mut roster); // Top first, as a live game lists them
         self.tracker.set_roster(roster);
+        let at = |t: &Tracker, id: &str| t.enemies.iter().position(|e| e.champion_id == id).unwrap_or(0);
         let now = self.clock.now();
         let (data, rules) = (self.data.clone(), self.rules().clone());
-        for (i, slot, ago) in [(0, Slot::Spell1, 0.0), (0, Slot::Spell2, 40.0), (1, Slot::Spell1, 120.0), (4, Slot::Spell2, 200.0), (4, Slot::Quest, 90.0)] {
+        for (id, slot, ago) in [("Lucian", Slot::Spell1, 0.0), ("Lucian", Slot::Spell2, 40.0), ("Nautilus", Slot::Spell1, 120.0), ("Shen", Slot::Spell2, 200.0), ("Shen", Slot::Quest, 90.0)] {
+            let i = at(&self.tracker, id);
             self.tracker.register(i, slot, ago, now, false, &data, &rules);
         }
     }
@@ -256,9 +265,12 @@ impl App {
     /// Someone has a quest Teleport: the overlay gets a third (icon) column.
     fn quest_column(&self) -> bool { self.tracker.enemies.iter().any(|e| e.has_quest_teleport()) }
 
-    fn card_w(&self) -> f32 { CARD_W + if self.quest_column() { QUEST_W + TILE_GAP } else { 0.0 } }
+    /// Champion portraits on: the saved setting, or the Settings window's unsaved choice while it is open (Cancel restores it).
+    fn portraits(&self) -> bool { self.setup.as_ref().map_or(self.settings.show_portraits, |s| s.draft_portraits()) }
 
-    fn mini_w(&self) -> f32 { mini_width() + if self.quest_column() { MINI_ICON + MINI_GAP } else { 0.0 } }
+    fn card_w(&self) -> f32 { card_width(self.portraits()) }
+
+    fn mini_w(&self) -> f32 { mini_width(self.portraits()) + if self.quest_column() { MINI_ICON + MINI_GAP } else { 0.0 } }
 
     pub fn message(&self) -> String {
         message::build(&self.tracker.enemies, &self.data, self.clock.now(), self.clock.is_live || self.clock.seen_live, &self.settings.message)
@@ -537,10 +549,12 @@ impl App {
         }
     }
 
+    fn flash_active(&self) -> bool { self.flash.as_ref().is_some_and(|(_, until)| Instant::now() < *until) }
+
     fn status_text(&self) -> String {
         if let Some((t, until)) = &self.flash { if Instant::now() < *until { return t.clone(); } }
         let t = self.clock.now() as i64;
-        if self.clock.is_live { format!("live {}:{:02}", t / 60, t % 60) } else { "no game".into() }
+        if self.clock.is_live { format!("In game {}:{:02}", t / 60, t % 60) } else { "No game".into() }
     }
 }
 
@@ -556,7 +570,9 @@ impl eframe::App for App {
             use raw_window_handle::{HasWindowHandle, RawWindowHandle};
             if let Ok(h) = frame.window_handle() {
                 if let RawWindowHandle::Win32(w) = h.as_raw() {
-                    win::make_no_activate(windows::Win32::Foundation::HWND(w.hwnd.get() as _));
+                    let h = windows::Win32::Foundation::HWND(w.hwnd.get() as _);
+                    win::make_no_activate(h);
+                    win::set_icon_from_resource(h);
                     self.hwnd_done = true;
                 }
             }
@@ -578,8 +594,8 @@ impl eframe::App for App {
             ui.set_opacity(self.settings.opacity.clamp(0.3, 1.0));
             let compact = self.settings.compact;
             let card_w = if compact { self.mini_w() } else { self.card_w() };
-            let card = egui::Frame::none().fill(p.surface).stroke(Stroke::new(1.0_f32, p.line_strong)).rounding(Rounding::same(if compact { 10.0 } else { 12.0 }))
-                .shadow(egui::epaint::Shadow { offset: egui::vec2(0.0, 3.0), blur: 16.0, spread: 0.0, color: p.shadow });
+            let card = egui::Frame::none().fill(p.surface).stroke(Stroke::new(1.0_f32, p.line_strong)).rounding(Rounding::same(if compact { 9.0 } else { 10.0 }))
+                .shadow(egui::epaint::Shadow { offset: egui::vec2(0.0, 3.0), blur: 14.0, spread: 0.0, color: p.shadow });
             let resp = card.show(ui, |ui| {
                 ui.set_width(card_w);
                 ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
@@ -594,12 +610,10 @@ impl eframe::App for App {
                 self.header(ui, ctx);
                 let (r, _) = ui.allocate_exact_size(egui::vec2(card_w, 1.0), Sense::hover());
                 ui.painter().rect_filled(r, 0.0_f32, p.line);
-                egui::Frame::none().inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 10.0, bottom: 12.0 }).show(ui, |ui| {
+                egui::Frame::none().inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 10.0, bottom: 10.0 }).show(ui, |ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(0.0, 6.0);
                     self.rows(ui);
-                    if self.tracker.enemies.is_empty() {
-                        ui.add(egui::Label::new(egui::RichText::new("Waiting for a match. Enemies appear automatically once the game has loaded. To track without a game, add them under Settings.").color(p.muted).size(11.5)).wrap());
-                    }
+                    if self.tracker.enemies.is_empty() { self.empty_state(ui); }
                     if self.settings.show_preview { self.preview(ui); }
                     self.footer(ui);
                 });
@@ -626,29 +640,35 @@ impl eframe::App for App {
 impl App {
     fn header(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let p = self.pal;
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(self.card_w(), 42.0), Sense::click_and_drag());
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(self.card_w(), 38.0), Sense::click_and_drag());
         if resp.drag_started() { ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag); }
         let painter = ui.painter_at(rect);
         let cy = rect.center().y;
-        theme::brand(&painter, egui::pos2(rect.left() + 22.0, cy), 9.0, &p);
-        let name = painter.text(egui::pos2(rect.left() + 38.0, cy), Align2::LEFT_CENTER, "Flashless", theme::semi(13.5), p.text);
-        let title = painter.text(egui::pos2(name.right() + 5.0, cy + 1.0), Align2::LEFT_CENTER, concat!("v", env!("CARGO_PKG_VERSION")), theme::regular(10.0), p.muted);
-        // status pill
-        let status = self.status_text();
-        let galley = painter.layout_no_wrap(status, theme::regular(10.5), p.muted);
-        let pill = Rect::from_min_size(egui::pos2(title.right() + 10.0, cy - 10.0), egui::vec2(galley.size().x + 26.0, 20.0));
-        painter.rect(pill, Rounding::same(10.0), p.bg, Stroke::new(1.0_f32, p.line));
-        painter.circle_filled(egui::pos2(pill.left() + 11.0, cy), 3.0, if self.clock.is_live { p.ready } else { p.muted });
-        painter.galley(egui::pos2(pill.left() + 18.0, cy - galley.size().y / 2.0), galley, p.muted);
+        theme::brand(&painter, egui::pos2(rect.left() + 21.0, cy), 8.5, &p);
+        let name = painter.text(egui::pos2(rect.left() + 36.0, cy), Align2::LEFT_CENTER, "Flashless", theme::semi(13.5), p.text);
+        let ver = painter.text(egui::pos2(name.right() + 6.0, cy + 1.0), Align2::LEFT_CENTER, concat!("v", env!("CARGO_PKG_VERSION")), theme::regular(10.5), p.muted);
+        // game status: a dot and a word, or the latest notice in its place
+        let live = self.clock.is_live;
+        let dot = egui::pos2(ver.right() + 14.0, cy + 0.5);
+        painter.circle_filled(dot, 3.0, if live { p.ready } else { p.muted });
+        let col = if self.flash_active() { p.secondary } else if live { p.text } else { p.muted };
         // icon buttons, right aligned
-        let icons = [("\u{E7A7}", "Undo the last change"), ("\u{E72C}", "Clear all tracked cooldowns"), ("\u{E73F}", "Compact mode"), ("\u{E713}", "Settings: roster, chat reading, appearance, hotkeys"), ("\u{E8BB}", "Exit")];
-        let mut x = rect.right() - 10.0 - 26.0 * icons.len() as f32;
+        let icons = [("\u{E7A7}", "Undo the last change"), ("\u{E72C}", "Clear all tracked cooldowns"), ("\u{E73F}", "Compact mode"), ("\u{E713}", "Settings"), ("\u{E8BB}", "Exit")];
+        let mut x = rect.right() - 8.0 - 26.0 * icons.len() as f32;
+        // long notices are cut short before the buttons (the full text is in the tooltip)
+        let status = self.status_text();
+        let mut job = egui::text::LayoutJob::simple_singleline(status.clone(), theme::regular(11.0), col);
+        job.wrap = egui::text::TextWrapping::truncate_at_width((x - dot.x - 14.0).max(20.0));
+        let g = painter.layout_job(job);
+        let gr = Rect::from_min_size(egui::pos2(dot.x + 8.0, cy - g.size().y / 2.0), g.size());
+        painter.galley(gr.min, g, col);
+        if self.flash_active() { ui.interact(gr, ui.id().with("status"), Sense::hover()).on_hover_text(status); }
         for (i, (glyph, tip)) in icons.iter().enumerate() {
             let r = Rect::from_min_size(egui::pos2(x, cy - 12.0), egui::vec2(26.0, 24.0));
             x += 26.0;
             let b = ui.interact(r, ui.id().with(("hdr", i)), Sense::click()).on_hover_text(*tip);
-            if b.hovered() { ui.painter().rect_filled(r, 6.0_f32, p.surface_hover); }
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, *glyph, theme::icon(if i == 4 { 10.0 } else { 12.0 }), if b.hovered() { p.accent_deep } else { p.muted });
+            if b.hovered() { ui.painter().rect_filled(r, 5.0_f32, p.surface_hover); }
+            ui.painter().text(r.center(), Align2::CENTER_CENTER, *glyph, theme::icon(if i == 4 { 10.0 } else { 12.0 }), if b.hovered() { p.text } else { p.secondary });
             if b.clicked() {
                 match i {
                     0 => { self.tracker.undo(); }
@@ -661,68 +681,73 @@ impl App {
         }
     }
 
+    /// Nothing to track yet.
+    fn empty_state(&self, ui: &mut egui::Ui) {
+        let p = self.pal;
+        let (title, body) = if self.clock.is_live { ("Game detected", "Loading the enemy champions...") }
+            else { ("No game detected", "Waiting for a match. Enemy champions will appear automatically.") };
+        ui.add_space(2.0);
+        ui.label(egui::RichText::new(title).font(theme::semi(13.0)).color(p.text));
+        ui.add_space(-3.0);
+        ui.add(egui::Label::new(egui::RichText::new(body).size(11.5).color(p.secondary)).wrap())
+            .on_hover_text("To track without a game, enter the enemies under Settings > Enemy Roster.");
+        ui.add_space(4.0);
+    }
+
     fn rows(&mut self, ui: &mut egui::Ui) {
         let p = self.pal;
         let now = self.clock.now();
         let gctx = self.tracker.context(now, self.clock.is_live);
-        let quest_col = if self.quest_column() { QUEST_W + TILE_GAP } else { 0.0 };
+        let portraits = self.portraits();
         let row_w = self.card_w() - 24.0;
-        let name_w = row_w - 2.0 * (TILE.x + TILE_GAP) - quest_col;
         for i in 0..self.tracker.enemies.len() {
             let row = ui.allocate_exact_size(egui::vec2(row_w, TILE.y), Sense::hover()).0;
-            // name block (click to tune)
+            // name block (click to tune); a quest Teleport takes a little of it on that row only
+            let quest = if self.tracker.enemies[i].has_quest_teleport() { QUEST_W + TILE_GAP } else { 0.0 };
+            let name_w = row_w - 2.0 * (TILE.x + TILE_GAP) - quest;
             let name_rect = Rect::from_min_size(row.min, egui::vec2(name_w, TILE.y));
             let (boots, boots_names) = boots_haste(&self.tracker.enemies[i], &self.data);
             let tip = if boots > 0 { format!("{boots_names}: +{boots} summoner spell haste\nClick to set Cosmic Insight and level") } else { "Click to set Cosmic Insight and level".to_string() };
             let nresp = ui.interact(name_rect, ui.id().with(("name", i)), Sense::click()).on_hover_text(tip);
             if nresp.clicked() { self.expanded = if self.expanded == Some(i) { None } else { Some(i) }; }
             let e = &self.tracker.enemies[i];
-            let painter = ui.painter_at(name_rect);
-            let c = egui::pos2(name_rect.left() + 9.0, name_rect.center().y);
-            painter.circle_filled(c, 9.0, p.accent_soft);
-            painter.text(c, Align2::CENTER_CENTER, format!("{}", i + 1), theme::semi(10.0), p.accent_deep);
-            let nx = name_rect.left() + 26.0;
-            painter.text(egui::pos2(nx, name_rect.center().y - 7.0), Align2::LEFT_CENTER, &e.name, theme::semi(13.0), p.text);
             // second line: lane, boots haste, Cosmic Insight hint
             let mut bits: Vec<(String, Color32)> = Vec::new();
             if let Some(role) = &e.role { bits.push((role.clone(), p.accent_deep)); }
             if boots > 0 { bits.push((format!("+{boots}"), p.ready)); }
-            if e.has_inspiration && !e.cosmic_insight && !e.runes_known { bits.push(("CI?".into(), p.cooling)); }
+            if e.has_inspiration && !e.cosmic_insight && !e.runes_known { bits.push(("CI?".into(), p.accent)); }
             if e.cosmic_insight { bits.push(("CI".into(), p.ready)); }
-            let mut x = nx;
-            for (k, (t, col)) in bits.iter().enumerate() {
-                if k > 0 { x = painter.text(egui::pos2(x, name_rect.center().y + 9.0), Align2::LEFT_CENTER, "  ·  ", theme::regular(10.0), p.muted).right(); }
-                x = painter.text(egui::pos2(x, name_rect.center().y + 9.0), Align2::LEFT_CENTER, t, theme::semi(10.0), *col).right();
-            }
+            let look = NameLook { index: i, champion_id: &e.champion_id, name: &e.name, bits, hovered: nresp.hovered() || self.expanded == Some(i) };
+            paint_name(ui.painter(), &p, name_rect, &look, portraits);
             for (k, slot) in self.display_slots(i).iter().enumerate() {
-                if *slot == Slot::Quest {
-                    let r = Rect::from_min_size(egui::pos2(row.right() - 2.0 * (TILE.x + TILE_GAP) - QUEST_W, row.top()), egui::vec2(QUEST_W, TILE.y));
-                    self.tile(ui, i, *slot, r, now, gctx, false);
+                let r = if *slot == Slot::Quest {
+                    Rect::from_min_size(egui::pos2(row.right() - 2.0 * (TILE.x + TILE_GAP) - QUEST_W, row.top()), egui::vec2(QUEST_W, TILE.y))
                 } else {
-                    let r = Rect::from_min_size(egui::pos2(row.right() - (2 - k) as f32 * (TILE.x + TILE_GAP) + TILE_GAP, row.top()), TILE);
-                    self.tile(ui, i, *slot, r, now, gctx, false);
-                }
+                    Rect::from_min_size(egui::pos2(row.right() - (2 - k) as f32 * (TILE.x + TILE_GAP) + TILE_GAP, row.top()), TILE)
+                };
+                self.tile(ui, i, *slot, r, now, gctx, false);
             }
-            if self.expanded == Some(i) { self.tune(ui, i); }
+            if self.expanded == Some(i) { let w = row_w; self.tune(ui, i, w); }
         }
     }
 
-    /// Compact mode: lane label and the two spell icons per enemy, time drawn on the icon.
+    /// Compact mode: portrait (optional), lane label and the spell icons per enemy, time drawn on the icon.
     fn mini_rows(&mut self, ui: &mut egui::Ui) {
         let p = self.pal;
         let now = self.clock.now();
         let gctx = self.tracker.context(now, self.clock.is_live);
         if self.tracker.enemies.is_empty() {
-            ui.add(egui::Label::new(egui::RichText::new("Waiting for a match").size(11.0).color(p.muted)));
+            let t = if self.clock.is_live { "Loading enemies" } else { "No game detected" };
+            ui.add(egui::Label::new(egui::RichText::new(t).size(11.0).color(p.secondary)));
             return;
         }
+        let portraits = self.portraits();
         for i in 0..self.tracker.enemies.len() {
             let row = ui.allocate_exact_size(egui::vec2(self.mini_w() - 16.0, MINI_ICON), Sense::hover()).0;
             let e = &self.tracker.enemies[i];
-            let label = e.role.clone().unwrap_or_else(|| e.name.chars().take(4).collect());
-            ui.painter().text(egui::pos2(row.left() + 2.0, row.center().y), Align2::LEFT_CENTER, label, theme::semi(11.5), p.accent_deep);
+            let x0 = paint_mini_label(ui.painter(), &p, row, &e.champion_id, &e.name, e.role.as_deref(), portraits);
             for (k, slot) in self.display_slots(i).iter().enumerate() {
-                let r = Rect::from_min_size(egui::pos2(row.left() + MINI_ROLE_W + k as f32 * (MINI_ICON + MINI_GAP), row.top()), egui::vec2(MINI_ICON, MINI_ICON));
+                let r = Rect::from_min_size(egui::pos2(x0 + k as f32 * (MINI_ICON + MINI_GAP), row.top()), egui::vec2(MINI_ICON, MINI_ICON));
                 self.tile(ui, i, *slot, r, now, gctx, true);
             }
         }
@@ -739,84 +764,49 @@ impl App {
         if let Some(v) = self.update.as_ref().map(|u| u.version.clone()) {
             let ur = Rect::from_center_size(egui::pos2(rect.left() + 44.0, cy), egui::vec2(16.0, 16.0));
             let ub = ui.interact(ur, ui.id().with("upd"), Sense::click()).on_hover_text(format!("Update to {v}: click to install"));
-            ui.painter().text(ur.center(), Align2::CENTER_CENTER, "\u{E896}", theme::icon(10.0), if ub.hovered() { p.accent_deep } else { p.accent });
+            ui.painter().text(ur.center(), Align2::CENTER_CENTER, "\u{E896}", theme::icon(10.0), if ub.hovered() { p.accent_hover } else { p.accent });
             if ub.clicked() { let ctx = ctx.clone(); self.start_update(&ctx); }
         }
         let r = Rect::from_min_size(egui::pos2(rect.right() - 30.0, cy - 11.0), egui::vec2(24.0, 22.0));
         let b = ui.interact(r, ui.id().with("expand"), Sense::click()).on_hover_text("Full view");
-        if b.hovered() { ui.painter().rect_filled(r, 6.0_f32, p.surface_hover); }
-        ui.painter().text(r.center(), Align2::CENTER_CENTER, "\u{E740}", theme::icon(11.0), if b.hovered() { p.accent_deep } else { p.muted });
+        if b.hovered() { ui.painter().rect_filled(r, 5.0_f32, p.surface_hover); }
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, "\u{E740}", theme::icon(11.0), if b.hovered() { p.text } else { p.secondary });
         if b.clicked() { self.settings.compact = false; self.settings.save(); }
     }
 
     /// One spell: its icon with a cooldown pie, plus the time (beside it in full view, on it in compact view).
     #[allow(clippy::too_many_arguments)]
     fn tile(&mut self, ui: &mut egui::Ui, i: usize, slot: Slot, r: Rect, now: f64, gctx: crate::cooldown::GameContext, mini: bool) {
-        let p = self.pal;
         let e = &self.tracker.enemies[i];
         let preview = self.tracker.preview(i, slot, gctx, &self.data, &self.settings.rules);
-        let spell = self.data.find_spell(e.spell_id(slot));
-        let spell_name = spell.map(|s| s.name.clone()).unwrap_or_default();
+        let spell_name = self.data.find_spell(e.spell_id(slot)).map(|s| s.name.clone()).unwrap_or_default();
         let cd = e.cooldowns.get(&slot).copied();
-        let remaining = self.tracker.remaining(i, slot, now);
-        let on_cd = remaining > 0.0 && cd.is_some();
+        let remaining = if cd.is_some() { self.tracker.remaining(i, slot, now) } else { 0.0 };
         let frac = cd.filter(|c| c.duration() > 0.0).map(|c| (remaining / c.duration()) as f32).unwrap_or(0.0);
+        // the game time it is back; shown once there is a game clock (or in the demo)
+        let ready_at = cd.filter(|_| remaining > 0.0 && (self.clock.is_live || self.clock.seen_live || self.demo)).map(|c| c.ready_at);
+        let back = ready_at.map(|t| { let t = t.round() as i64; format!("\nBack up at {}:{:02}", t / 60, t % 60) }).unwrap_or_default();
         let tip = match &preview {
-            Some(b) => format!("{}: {:.1}s  (base {:.0}s, haste {:.0}){}\nLeft click: used now\nRight click: clear\nWheel: ±5s",
+            Some(b) => format!("{}: {:.1}s  (base {:.0}s, haste {:.0}){}{back}\nLeft click: used now\nRight click: clear\nWheel: ±5s",
                 b.ability_name, b.cooldown, b.base, b.haste, if b.detail.is_empty() { String::new() } else { format!("\n{}", b.detail) }),
             None => "no cooldown data".into(),
         };
         let resp = ui.interact(r, ui.id().with(("tile", i, slot as u8)), Sense::click()).on_hover_text(tip);
-        let painter = ui.painter();
-        let tint = if preview.is_some() { Color32::WHITE } else { Color32::from_gray(90) };
-        let s = remaining.ceil() as i64;
-        let time = format!("{}:{:02}", s / 60, s % 60);
-
-        let icon_rect = if mini { r } else {
-            painter.rect(r, 8.0_f32, p.bg, Stroke::new(1.0_f32, if resp.hovered() { p.accent } else if on_cd { p.cooling_line } else { p.line }));
-            Rect::from_min_size(r.min + egui::vec2(5.0, 5.0), egui::vec2(r.height() - 10.0, r.height() - 10.0))
-        };
-        match super::icons::spell_texture(ui.ctx(), &spell_name) {
-            Some(tex) => super::icons::draw_icon(painter, tex, icon_rect, 5.0, tint),
-            None => {
-                painter.rect_filled(icon_rect, 5.0_f32, p.surface_hover);
-                let a = self.settings.message.abbreviate(&spell_name).to_uppercase();
-                painter.text(icon_rect.center(), Align2::CENTER_CENTER, if a.is_empty() { "?".into() } else { a.chars().take(2).collect::<String>() }, theme::semi(10.5), p.muted);
-            }
-        }
-        if on_cd {
-            super::icons::draw_pie(painter, icon_rect, frac, Color32::from_black_alpha(165), p.accent);
-        }
-        if let Some(until) = self.alerts.get(&(e.champion_id.clone(), slot)) {
-            // Flash just came back: a soft pulsing ring for a few seconds
+        let pulse = self.alerts.get(&(e.champion_id.clone(), slot)).map(|until| {
             let left = until.saturating_duration_since(Instant::now()).as_secs_f32();
-            let wave = (left * std::f32::consts::TAU * 1.5).sin() * 0.5 + 0.5;
-            let ring = p.ready.gamma_multiply(0.35 + 0.65 * wave);
-            painter.rect_stroke(icon_rect.expand(1.5 + 1.5 * wave), 6.0_f32, Stroke::new(2.0_f32 + wave, ring));
-        }
-        if mini {
-            let border = if resp.hovered() { p.accent } else if on_cd { p.cooling_line } else { p.ready.gamma_multiply(0.55) };
-            painter.rect_stroke(icon_rect, 5.0_f32, Stroke::new(1.2_f32, border));
-            if on_cd {
-                let label = if s >= 100 { format!("{}", s) } else { time.clone() };
-                let label = if s >= 600 { format!("{}m", s / 60) } else { label };
-                super::icons::outlined_text(painter, icon_rect.center(), &label, theme::semi(if label.len() > 3 { 10.0 } else { 11.0 }), Color32::WHITE);
-            }
-        } else {
-            painter.rect_stroke(icon_rect, 5.0_f32, Stroke::new(1.0_f32, Color32::from_black_alpha(120)));
-            let tx = r.right() - 9.0;
-            if on_cd {
-                let ty = if self.clock.is_live { r.center().y - 6.0 } else { r.center().y };
-                painter.text(egui::pos2(tx, ty), Align2::RIGHT_CENTER, &time, theme::semi(13.5), p.cooling);
-                if self.clock.is_live {
-                    let at = cd.unwrap().ready_at.round() as i64;
-                    painter.text(egui::pos2(tx, r.center().y + 9.0), Align2::RIGHT_CENTER, format!("@{}:{:02}", at / 60, at % 60), theme::regular(9.5), p.muted);
-                }
-            } else {
-                let (t, col) = if preview.is_some() { ("Ready", p.ready) } else { ("n/a", p.muted) };
-                painter.text(egui::pos2(tx, r.center().y), Align2::RIGHT_CENTER, t, theme::semi(13.0), col);
-            }
-        }
+            (left * std::f32::consts::TAU * 1.5).sin() * 0.5 + 0.5
+        });
+        let look = TileLook {
+            spell: &spell_name,
+            abbr: self.settings.message.abbreviate(&spell_name),
+            has_data: preview.is_some(),
+            remaining,
+            frac,
+            ready_at,
+            hovered: resp.hovered(),
+            pulse,
+        };
+        paint_tile(ui.painter(), &self.pal, r, &look, mini);
         if resp.clicked() { self.register(i, slot); }
         if resp.secondary_clicked() { self.tracker.clear(i, slot); }
         if resp.hovered() {
@@ -825,16 +815,16 @@ impl App {
         }
     }
 
-    fn tune(&mut self, ui: &mut egui::Ui, i: usize) {
+    fn tune(&mut self, ui: &mut egui::Ui, i: usize, w: f32) {
         let p = self.pal;
         let now = self.clock.now();
         egui::Frame::none().fill(p.inset).stroke(Stroke::new(1.0_f32, p.line)).rounding(7.0_f32).inner_margin(egui::Margin::symmetric(10.0, 7.0)).show(ui, |ui| {
-            ui.set_width(self.card_w() - 44.0);
+            ui.set_width(w - 22.0);
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
             let mut changed = false;
             ui.horizontal(|ui| {
                 let e = &mut self.tracker.enemies[i];
-                ui.label(egui::RichText::new("Level").color(p.muted).size(11.0)).on_hover_text("Unleashed Teleport's cooldown depends on level");
+                ui.label(egui::RichText::new("Level").color(p.secondary).size(11.0)).on_hover_text("Unleashed Teleport's cooldown depends on level");
                 if small_btn(ui, "−") { e.level = (e.level - 1).max(1); changed = true; }
                 ui.label(egui::RichText::new(format!("{}", e.level)).font(theme::semi(11.5)));
                 if small_btn(ui, "+") { e.level = (e.level + 1).min(18); changed = true; }
@@ -845,34 +835,22 @@ impl App {
             if changed { self.tracker.recalculate(i, now, self.clock.is_live, &data, &rules); }
             let gctx = self.tracker.context(now, self.clock.is_live);
             let parts: Vec<String> = self.display_slots(i).iter().filter_map(|s| self.tracker.preview(i, *s, gctx, &data, &rules)).map(|b| format!("{} {:.0}s", b.ability_name, b.cooldown)).collect();
-            ui.label(egui::RichText::new(parts.join("  ·  ")).color(p.muted).size(10.5));
+            ui.label(egui::RichText::new(parts.join("  ·  ")).color(p.secondary).size(10.5));
         });
     }
 
     fn preview(&mut self, ui: &mut egui::Ui) {
-        let p = self.pal;
         let msg = self.message();
-        ui.add_space(4.0);
-        let resp = egui::Frame::none().fill(p.inset).stroke(Stroke::new(1.0_f32, p.line)).rounding(8.0_f32)
-            .inner_margin(egui::Margin { left: 13.0, right: 10.0, top: 6.0, bottom: 7.0 }).show(ui, |ui| {
-                ui.set_width(self.card_w() - 24.0 - 23.0);
-                ui.spacing_mut().item_spacing = egui::vec2(0.0, 2.0);
-                ui.label(egui::RichText::new("CHAT MESSAGE").font(theme::semi(9.5)).color(p.accent_deep));
-                let text = if msg.is_empty() { "No cooldowns tracked".to_string() } else { msg };
-                ui.add(egui::Label::new(egui::RichText::new(text).font(theme::mono(12.0)).color(p.text)).wrap());
-            });
-        let r = resp.response.rect;
-        ui.painter().rect_filled(Rect::from_min_size(r.min, egui::vec2(3.0, r.height())), Rounding { nw: 8.0, sw: 8.0, ne: 0.0, se: 0.0 }, p.accent);
+        ui.add_space(2.0);
+        chat_preview(ui, &self.pal, self.card_w() - 24.0, &msg);
     }
 
     fn footer(&mut self, ui: &mut egui::Ui) {
         let p = self.pal;
-        ui.add_space(6.0);
+        ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing = egui::vec2(10.0, 0.0);
-            let copy = egui::Button::new(egui::RichText::new("Copy").font(theme::semi(12.0)).color(p.accent_text))
-                .fill(p.accent).stroke(Stroke::NONE).rounding(6.0_f32).min_size(egui::vec2(72.0, 26.0));
-            if ui.add(copy).on_hover_text("Copy the message to the clipboard").clicked() { self.copy_now(); }
+            ui.spacing_mut().item_spacing = egui::vec2(12.0, 0.0);
+            if gold_button(ui, &p, "Copy", 68.0).on_hover_text("Copy the message to the clipboard").clicked() { self.copy_now(); }
             let mut auto = self.settings.auto_copy;
             if theme::check(ui, &mut auto, egui::RichText::new("Auto-copy").size(11.5)).on_hover_text("Copy the message whenever a cooldown is registered").changed() {
                 self.settings.auto_copy = auto;
@@ -888,9 +866,7 @@ impl App {
                 let label = if self.updating.is_some() { "Updating...".to_string() } else { format!("Update {v}") };
                 // same look as Copy, pinned to the right
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let btn = egui::Button::new(egui::RichText::new(label).font(theme::semi(12.0)).color(p.accent_text))
-                        .fill(p.accent).stroke(Stroke::NONE).rounding(6.0_f32).min_size(egui::vec2(72.0, 26.0));
-                    let b = ui.add(btn).on_hover_text("Download and install it now (Flashless restarts, settings are kept).\nRight click: see what's new");
+                    let b = gold_button(ui, &p, &label, 68.0).on_hover_text("Download and install it now (Flashless restarts, settings are kept).\nRight click: see what's new");
                     if b.clicked() { let ctx = ui.ctx().clone(); self.start_update(&ctx); }
                     if b.secondary_clicked() { win::open_url(&page); }
                 });
@@ -899,7 +875,188 @@ impl App {
     }
 }
 
-fn mini_width() -> f32 { 8.0 + MINI_ROLE_W + 2.0 * MINI_ICON + MINI_GAP + 8.0 + 2.0 }
+// ---------- shared painters (the overlay and the Settings preview) ----------
+
+/// Overlay card width in full view.
+pub fn card_width(portraits: bool) -> f32 {
+    CARD_W + if portraits { PORTRAIT_W - BADGE_W } else { 0.0 }
+}
+
+/// What a spell tile shows. The overlay fills it from the tracker; the Settings preview from sample data.
+pub struct TileLook<'a> {
+    pub spell: &'a str,
+    /// Chat abbreviation ("f", "ig"), the stand-in when there is no icon.
+    pub abbr: String,
+    /// Cooldown data is known for it.
+    pub has_data: bool,
+    /// Seconds until it is back (0 = up).
+    pub remaining: f64,
+    /// Share of the cooldown still to go, for the pie.
+    pub frac: f32,
+    /// Game time it is back, shown under the countdown while a game is live.
+    pub ready_at: Option<f64>,
+    pub hovered: bool,
+    /// Flash just came back: pulse phase 0..1.
+    pub pulse: Option<f32>,
+}
+
+/// "ig" -> "Ig", at most three letters.
+fn short_abbr(a: &str) -> String {
+    let mut c = a.chars().take(3);
+    c.next().map(|f| f.to_uppercase().chain(c).collect()).unwrap_or_default()
+}
+
+/// The spell icon with its cooldown pie and edge.
+fn paint_slot_icon(painter: &egui::Painter, p: &Pal, r: Rect, t: &TileLook, mini: bool) {
+    let on_cd = t.remaining > 0.0;
+    match super::icons::spell_texture(painter.ctx(), t.spell) {
+        Some(tex) => super::icons::draw_icon(painter, tex, r, 5.0, if t.has_data { Color32::WHITE } else { Color32::from_gray(90) }),
+        None => {
+            painter.rect_filled(r, 5.0_f32, p.elevated);
+            let a = short_abbr(&t.abbr);
+            painter.text(r.center(), Align2::CENTER_CENTER, if a.is_empty() { "?".into() } else { a }, theme::semi(10.5), p.muted);
+        }
+    }
+    if on_cd { super::icons::draw_pie(painter, r, t.frac, Color32::from_black_alpha(170), p.accent); }
+    if let Some(wave) = t.pulse {
+        // Flash just came back: a soft pulsing ring for a few seconds
+        painter.rect_stroke(r.expand(1.5 + 1.5 * wave), 6.0_f32, Stroke::new(2.0_f32 + wave, p.ready.gamma_multiply(0.35 + 0.65 * wave)));
+    }
+    let edge = if mini {
+        Stroke::new(1.2_f32, if t.hovered { p.accent } else if on_cd { p.cooling_line } else { p.ready.gamma_multiply(0.55) })
+    } else {
+        Stroke::new(1.0_f32, Color32::from_black_alpha(120))
+    };
+    painter.rect_stroke(r, 5.0_f32, edge);
+}
+
+/// One spell: a box with the icon and its time (full view), or the icon with the time on it (compact view).
+pub fn paint_tile(painter: &egui::Painter, p: &Pal, r: Rect, t: &TileLook, mini: bool) {
+    let on_cd = t.remaining > 0.0;
+    let s = t.remaining.ceil() as i64;
+    if mini {
+        paint_slot_icon(painter, p, r, t, true);
+        if on_cd {
+            let label = if s >= 600 { format!("{}m", s / 60) } else if s >= 100 { format!("{s}") } else { format!("{}:{:02}", s / 60, s % 60) };
+            super::icons::outlined_text(painter, r.center(), &label, theme::semi(if label.len() > 3 { 10.0 } else { 11.0 }), Color32::WHITE);
+        }
+        return;
+    }
+    let (fill, edge) = if t.hovered { (p.surface_hover, p.accent) } else if on_cd { (p.elevated, p.cooling_line) } else { (p.inset, p.line) };
+    painter.rect(r, 8.0_f32, fill, Stroke::new(1.0_f32, edge));
+    let icon = Rect::from_min_size(r.min + egui::vec2(5.0, 5.0), egui::vec2(r.height() - 10.0, r.height() - 10.0));
+    if r.width() <= r.height() + 1.0 {
+        // square tile (quest Teleport): the time goes on the icon, the game time it is back in the tooltip
+        paint_slot_icon(painter, p, icon, t, false);
+        if on_cd {
+            let label = if s >= 600 { format!("{}m", s / 60) } else if s >= 100 { format!("{s}") } else { format!("{}:{:02}", s / 60, s % 60) };
+            super::icons::outlined_text(painter, icon.center(), &label, theme::semi(if label.len() > 3 { 9.5 } else { 10.5 }), Color32::WHITE);
+        }
+        return;
+    }
+    paint_slot_icon(painter, p, icon, t, false);
+    let tx = r.right() - 9.0;
+    if on_cd {
+        let time = format!("{}:{:02}", s / 60, s % 60);
+        match t.ready_at {
+            Some(at) => {
+                painter.text(egui::pos2(tx, r.center().y - 6.0), Align2::RIGHT_CENTER, &time, theme::semi(13.5), p.cooling);
+                let at = at.round() as i64;
+                painter.text(egui::pos2(tx, r.center().y + 8.5), Align2::RIGHT_CENTER, format!("@{}:{:02}", at / 60, at % 60), theme::regular(9.5), p.muted);
+            }
+            None => { painter.text(egui::pos2(tx, r.center().y), Align2::RIGHT_CENTER, &time, theme::semi(13.5), p.cooling); }
+        }
+    } else {
+        let (text, col) = if t.has_data { ("Ready", p.ready) } else { ("n/a", p.muted) };
+        painter.text(egui::pos2(tx, r.center().y), Align2::RIGHT_CENTER, text, theme::semi(13.0), col);
+    }
+}
+
+/// Name block of a full-view row.
+pub struct NameLook<'a> {
+    pub index: usize,
+    pub champion_id: &'a str,
+    pub name: &'a str,
+    /// Second line: lane, boots haste, Cosmic Insight.
+    pub bits: Vec<(String, Color32)>,
+    pub hovered: bool,
+}
+
+/// Number badge (or the champion portrait in its place), the name, and the lane line under it.
+pub fn paint_name(painter: &egui::Painter, p: &Pal, r: Rect, n: &NameLook, portraits: bool) {
+    let cy = r.center().y;
+    let nx = if portraits {
+        paint_portrait(painter, p, Rect::from_min_size(egui::pos2(r.left(), cy - PORTRAIT / 2.0), egui::vec2(PORTRAIT, PORTRAIT)), n.champion_id, n.name);
+        r.left() + PORTRAIT_W
+    } else {
+        let c = egui::pos2(r.left() + 9.0, cy);
+        painter.circle_filled(c, 9.0, p.accent_soft);
+        painter.text(c, Align2::CENTER_CENTER, format!("{}", n.index + 1), theme::semi(10.0), p.accent_deep);
+        r.left() + BADGE_W
+    };
+    let clip = painter.with_clip_rect(Rect::from_min_max(egui::pos2(nx, r.top()), egui::pos2(r.right() - 2.0, r.bottom())).intersect(painter.clip_rect()));
+    let line1 = if n.bits.is_empty() { cy } else { cy - 7.0 };
+    clip.text(egui::pos2(nx, line1), Align2::LEFT_CENTER, n.name, theme::semi(13.0), if n.hovered { p.accent_deep } else { p.text });
+    let mut x = nx;
+    for (k, (t, col)) in n.bits.iter().enumerate() {
+        if k > 0 { x = clip.text(egui::pos2(x, cy + 9.0), Align2::LEFT_CENTER, "  ·  ", theme::regular(10.0), p.muted).right(); }
+        x = clip.text(egui::pos2(x, cy + 9.0), Align2::LEFT_CENTER, t, theme::semi(10.0), *col).right();
+    }
+}
+
+/// Square champion portrait with soft corners; initials if the champion is newer than this build.
+pub fn paint_portrait(painter: &egui::Painter, p: &Pal, r: Rect, champion_id: &str, name: &str) {
+    match super::icons::portrait_texture(painter.ctx(), champion_id) {
+        Some(tex) => super::icons::draw_icon(painter, tex, r, 4.0, Color32::WHITE),
+        None => {
+            painter.rect_filled(r, 4.0_f32, p.elevated);
+            let initials: String = name.split_whitespace().filter_map(|w| w.chars().next()).take(2).collect();
+            painter.text(r.center(), Align2::CENTER_CENTER, initials, theme::semi(r.height() * 0.4), p.secondary);
+        }
+    }
+    painter.rect_stroke(r, 4.0_f32, Stroke::new(1.0_f32, p.line_strong));
+}
+
+/// Compact row: optional portrait and the lane label. Returns where the spell icons start.
+pub fn paint_mini_label(painter: &egui::Painter, p: &Pal, row: Rect, champion_id: &str, name: &str, role: Option<&str>, portraits: bool) -> f32 {
+    let mut x = row.left();
+    if portraits {
+        paint_portrait(painter, p, Rect::from_min_size(egui::pos2(x, row.center().y - MINI_PORTRAIT / 2.0), egui::vec2(MINI_PORTRAIT, MINI_PORTRAIT)), champion_id, name);
+        x += MINI_PORTRAIT + 6.0;
+    }
+    let label = role.map(str::to_string).unwrap_or_else(|| name.chars().take(4).collect());
+    painter.text(egui::pos2(x + 1.0, row.center().y), Align2::LEFT_CENTER, label, theme::semi(11.5), p.accent_deep);
+    x + MINI_ROLE_W
+}
+
+/// The chat message as it will be pasted, on a recessed panel with a gold edge.
+pub fn chat_preview(ui: &mut egui::Ui, p: &Pal, width: f32, msg: &str) {
+    let resp = egui::Frame::none().fill(p.inset).stroke(Stroke::new(1.0_f32, p.line)).rounding(7.0_f32)
+        .inner_margin(egui::Margin { left: 12.0, right: 10.0, top: 6.0, bottom: 7.0 }).show(ui, |ui| {
+            ui.set_width(width - 22.0);
+            ui.spacing_mut().item_spacing = egui::vec2(0.0, 2.0);
+            ui.label(egui::RichText::new("CHAT MESSAGE").font(theme::semi(9.5)).color(p.accent_muted));
+            let (text, col) = if msg.is_empty() { ("No cooldowns tracked", p.muted) } else { (msg, p.text) };
+            ui.add(egui::Label::new(egui::RichText::new(text).font(theme::mono(12.0)).color(col)).wrap());
+        });
+    let r = resp.response.rect;
+    ui.painter().rect_filled(Rect::from_min_size(r.min, egui::vec2(2.5, r.height())), Rounding { nw: 7.0, sw: 7.0, ne: 0.0, se: 0.0 }, p.accent);
+}
+
+/// Filled gold button (Copy, Update, Save): brighter on hover.
+pub fn gold_button(ui: &mut egui::Ui, p: &Pal, text: &str, min_w: f32) -> egui::Response {
+    let galley = ui.painter().layout_no_wrap(text.to_string(), theme::semi(12.0), p.accent_text);
+    let size = egui::vec2((galley.size().x + 24.0).max(min_w), 26.0);
+    let (r, resp) = ui.allocate_exact_size(size, Sense::click());
+    let fill = if resp.is_pointer_button_down_on() { p.accent_muted } else if resp.hovered() { p.accent_hover } else { p.accent };
+    ui.painter().rect_filled(r, 6.0_f32, fill);
+    ui.painter().galley(r.center() - galley.size() / 2.0, galley, p.accent_text);
+    resp
+}
+
+pub fn mini_width(portraits: bool) -> f32 {
+    8.0 + if portraits { MINI_PORTRAIT + 6.0 } else { 0.0 } + MINI_ROLE_W + 2.0 * MINI_ICON + MINI_GAP + 8.0 + 2.0
+}
 
 fn small_btn(ui: &mut egui::Ui, t: &str) -> bool {
     ui.add(egui::Button::new(egui::RichText::new(t).size(12.0)).min_size(egui::vec2(22.0, 20.0)).rounding(5.0_f32)).clicked()
