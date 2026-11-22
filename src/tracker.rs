@@ -256,15 +256,25 @@ impl Tracker {
         }
         if new_game || ids(&incoming) != ids(&self.enemies) {
             if !new_game {
-                // same match, roster changed (a champion resolved late, a swap): keep the timers that still apply
-                for e in incoming.iter_mut() {
-                    if let Some(old) = self.enemies.iter().find(|o| o.champion_id == e.champion_id) {
-                        e.cooldowns = old.cooldowns.clone();
-                        e.cosmic_insight = old.cosmic_insight;
-                        e.runes_known = old.runes_known;
-                        e.extra_summoner_haste = old.extra_summoner_haste;
-                    }
+                // same match, roster changed (a champion resolved late, Viego possessing someone and back):
+                // it's still the same player, so their timers and rune state follow them
+                let unmatched_old: Vec<usize> = (0..self.enemies.len()).filter(|&o| !incoming.iter().any(|x| x.champion_id == self.enemies[o].champion_id)).collect();
+                let unmatched_new: Vec<usize> = (0..incoming.len()).filter(|&n| !self.enemies.iter().any(|o| o.champion_id == incoming[n].champion_id)).collect();
+                for (n, e) in incoming.iter_mut().enumerate() {
+                    let same_champ = self.enemies.iter().find(|o| o.champion_id == e.champion_id);
+                    let same_player = || {
+                        // by Riot ID, or the only champion that changed (no Riot ID in some modes)
+                        unmatched_old.iter().map(|&o| &self.enemies[o]).find(|o| !o.riot_id.is_empty() && o.riot_id == e.riot_id)
+                            .or_else(|| (unmatched_old.len() == 1 && unmatched_new == [n]).then(|| &self.enemies[unmatched_old[0]]))
+                    };
+                    let Some(old) = same_champ.or_else(|| { let o = same_player(); if let Some(o) = o { e.role = o.role.clone(); } o }) else { continue };
+                    e.cooldowns = old.cooldowns.clone();
+                    e.cosmic_insight = old.cosmic_insight;
+                    e.runes_known = old.runes_known;
+                    if old.runes_known { e.has_inspiration = old.has_inspiration; }
+                    e.extra_summoner_haste = old.extra_summoner_haste;
                 }
+                sort_by_role(&mut incoming);
             }
             self.set_roster(incoming);
             return true;
@@ -411,6 +421,28 @@ mod tests {
         t.apply_live_default(&snap(vec![p("Diana", "CHAOS"), p("Garen", "CHAOS")], 1014.0), &d);
         let diana = t.enemies.iter().position(|e| e.champion_id == "Diana").unwrap();
         assert!(t.remaining(diana, Slot::Spell1, 1014.0) > 200.0);
+    }
+
+    #[test]
+    fn viego_possession_keeps_the_timer() {
+        // the Live Client API lists Viego as the champion he's possessing, then as Viego again
+        let d = GameData::embedded();
+        let r = CooldownRules::default();
+        let p = |c: &str, id: &str| live::LivePlayer { champion_raw: format!("game_character_displayname_{c}"), champion_name: c.into(), team: "CHAOS".into(),
+            position: String::new(), level: 9, item_ids: vec![], spell1_raw: String::new(), spell1_name: "Flash".into(), spell2_raw: String::new(),
+            spell2_name: "Smite".into(), has_inspiration: false, riot_id: id.into() };
+        let snap = |enemies: Vec<live::LivePlayer>, t: f64| LiveSnapshot { game_time: t, game_mode: "CLASSIC".into(), map_number: 11, enemies, me: String::new() };
+        for ids in [("V#1", "L#1"), ("", "")] {
+            let mut t = Tracker::default();
+            t.apply_live_default(&snap(vec![p("Lux", ids.1), p("Viego", ids.0)], 800.0), &d);
+            t.apply_live_default(&snap(vec![p("Lux", ids.1), p("Morgana", ids.0)], 874.0), &d);
+            // "Morgana used Flash" while possessed
+            let m = t.enemies.iter().position(|e| e.champion_id == "Morgana").unwrap();
+            assert!(t.register(m, Slot::Spell1, 0.0, 875.0, true, &d, &r));
+            t.apply_live_default(&snap(vec![p("Lux", ids.1), p("Viego", ids.0)], 879.0), &d);
+            let v = t.enemies.iter().position(|e| e.champion_id == "Viego").unwrap();
+            assert!((t.remaining(v, Slot::Spell1, 879.0) - 296.0).abs() < 0.5, "riot ids {ids:?}");
+        }
     }
 
     impl Tracker {
